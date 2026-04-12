@@ -1,0 +1,18 @@
+services:
+  scp-agent:
+    image: sijun52/scp-mcp-code-agent:latest
+    # 로컬 빌드 시: image 대신 아래 주석 해제
+    # build: .
+    ports:
+      - "8000:8000"
+
+    # .env 파일에서 환경변수 로드 (API 키, MCP URL 등)
+    env_file: .env
+
+    volumes:
+      # 핵심: 컨테이너 내부 /app/generated → 로컬 ./generated 매핑
+      # 에이전트가 생성한 .py 파일이 사용자 로컬에 직접 저장됨
+      - ./generated:/app/generated
+
+    # 컨테이너 종료 시 자동 재시작 (선택)
+    restart: unless-stopped

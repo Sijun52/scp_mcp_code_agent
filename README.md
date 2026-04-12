@@ -88,7 +88,57 @@ scp_mcp_code_agent/
 
 ## 시작하기
 
-### 1. 환경 설정
+### Docker로 실행 (권장)
+
+사용자는 Docker 이미지를 받아서 실행하기만 하면 됩니다.  
+에이전트가 생성한 `.py` 파일은 **사용자 로컬 `./generated/` 디렉토리**에 직접 저장됩니다.
+
+```
+[컨테이너 내부 /app/generated] ←── volume ──► [로컬 ./generated]
+```
+
+#### 1. 환경변수 파일 준비
+
+```bash
+curl -o .env https://raw.githubusercontent.com/Sijun52/scp_mcp_code_agent/master/.env.example
+# 또는 직접 .env 파일 생성
+```
+
+`.env` 필수 항목:
+
+```dotenv
+OPENAI_API_KEY=sk-...
+
+# Remote OpenAPI MCP 서버 주소
+OPENAPI_MCP_TRANSPORT=streamable_http
+OPENAPI_MCP_URL=http://your-openapi-mcp-server:8080/mcp
+```
+
+#### 2. docker-compose로 실행
+
+```bash
+# docker-compose.yml 다운로드
+curl -o docker-compose.yml https://raw.githubusercontent.com/Sijun52/scp_mcp_code_agent/master/docker-compose.yml
+
+# 실행 (로컬 ./generated 디렉토리에 파일 생성됨)
+docker compose up
+```
+
+브라우저에서 `http://localhost:8000` 접속 후 서비스명을 입력합니다.
+
+#### 3. docker run으로 직접 실행
+
+```bash
+docker run \
+  --env-file .env \
+  -v $(pwd)/generated:/app/generated \
+  -p 8000:8000 \
+  sijun52/scp-mcp-code-agent:latest
+```
+
+---
+
+### 로컬 개발 환경 설정
 
 ```bash
 # 의존성 설치
@@ -96,28 +146,17 @@ uv sync --all-extras
 
 # 환경변수 파일 생성
 cp .env.example .env
+# .env에서 로컬 개발용 경로로 수정:
+#   OUTPUT_DIR=./generated
+#   EXAMPLE_DIR=./mcp_code_example
+#   OPENAPI_MCP_TRANSPORT=stdio  (로컬 MCP 서버 사용 시)
 ```
-
-`.env` 파일에서 아래 항목을 채웁니다:
-
-```dotenv
-OPENAI_API_KEY=sk-...         # OpenAI API 키 (필수)
-LLM_MODEL=gpt-4o              # 사용할 모델 (기본값)
-
-CLOUD_API_BASE_URL=https://...  # SCP 플랫폼 API URL
-CLOUD_API_KEY=...               # SCP API 키
-CLOUD_TENANT_ID=...             # SCP 테넌트 ID
-```
-
-### 2. Chainlit UI 실행
 
 ```bash
 uv run chainlit run src/scp_mcp_code_agent/app.py
 ```
 
-브라우저에서 `http://localhost:8000` 접속 후 서비스명을 입력합니다.
-
-### 3. CLI 실행 (선택)
+#### CLI 실행 (선택)
 
 ```bash
 uv run scp-agent "virtual server"

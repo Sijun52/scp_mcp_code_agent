@@ -1,0 +1,34 @@
+# 가상환경 / 의존성 (이미지 내에서 uv로 재설치)
+.venv/
+uv.lock
+
+# 환경변수 (절대 이미지에 포함 금지)
+.env
+
+# 에이전트가 생성한 출력물 (volume mount로 제공)
+generated/
+
+# 개발 / 테스트 파일
+tests/
+.pytest_cache/
+.ruff_cache/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Chainlit 런타임 파일
+.chainlit/
+chainlit.md
+
+# 문서
+README.md
+TODO.md
+
+# OS
+.DS_Store
+Thumbs.db
