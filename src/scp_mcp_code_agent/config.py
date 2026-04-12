@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     openapi_mcp_command: str = "python"  # stdio 방식 fallback
     openapi_mcp_args: str = "-m openapi_mcp_server"
 
+    # SCP Docs MCP server (상품 문서 검색 — 리치 프롬프트 작성용)
+    # 미설정 시 docs 연결 없이 동작 (에이전트가 스펙만으로 프롬프트 작성)
+    docs_mcp_url: str = ""
+
     # 생성된 MCP 서버 저장 위치 (기본: 사용자 홈 디렉토리)
     output_dir: Path = Path.home() / "scp-mcp-servers"
 

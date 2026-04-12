@@ -5,7 +5,7 @@ that creates an agent graph calling tools in a loop until completion.
 
 Architecture:
   - LLM: ChatOpenAI (configured via .env)
-  - Tools: MCP tools (MultiServerMCPClient) + code-runner tools + planning tool
+  - Tools: MCP tools (filesystem + openapi + optional docs) + code-runner tools + planning tools
   - Graph: create_agent returns a CompiledStateGraph with InMemorySaver checkpointer
            (checkpointer는 HITL interrupt/resume에 필수)
 
@@ -134,7 +134,8 @@ async def create_agent(extra_callbacks: list | None = None):  # noqa: RUF029
     Returns:
         Tuple of (compiled_graph, mcp_ctx).
     """
-    system_prompt = build_system_prompt(settings.example_dir, settings.output_dir)
+    docs_available = bool(settings.docs_mcp_url)
+    system_prompt = build_system_prompt(settings.example_dir, settings.output_dir, docs_available)
 
     llm = ChatOpenAI(
         model=settings.llm_model,

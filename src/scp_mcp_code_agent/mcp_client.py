@@ -3,6 +3,7 @@
 Manages connections to:
   1. Filesystem MCP server  — built-in, runs as a stdio subprocess.
   2. OpenAPI MCP server     — external, assumed to be running (config from .env).
+  3. Docs MCP server        — optional, remote HTTP; omitted when DOCS_MCP_URL is unset.
 """
 
 import sys
@@ -45,6 +46,15 @@ def _build_server_configs() -> dict:
         }
     else:
         raise ValueError(f"Unsupported OPENAPI_MCP_TRANSPORT: {transport!r}")
+
+    # ------------------------------------------------------------------
+    # 3. Docs MCP server (optional — skipped when DOCS_MCP_URL is empty)
+    # ------------------------------------------------------------------
+    if settings.docs_mcp_url:
+        configs["docs"] = {
+            "transport": "streamable_http",
+            "url": settings.docs_mcp_url,
+        }
 
     return configs
 

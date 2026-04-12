@@ -7,6 +7,7 @@ OpenAPI 스펙을 기반으로 MCP 서버 코드를 자동 생성하는 LangChai
 Chainlit UI → LangChain Agent (create_agent)
                  ├── OpenAPI MCP  → OpenAPI 스펙 조회
                  ├── Filesystem MCP → 예시 코드 읽기 / 생성 코드 저장
+                 ├── Docs MCP     → SCP 상품 문서 검색 (선택)
                  ├── run_ruff_check → Lint 검증
                  └── run_pytest     → 테스트 검증
 ```
@@ -23,31 +24,45 @@ Chainlit UI → LangChain Agent (create_agent)
 
 ### 에이전트 코어
 - [x] `agent.py` — `langchain.agents.create_agent` 기반 에이전트 팩토리
-- [x] `mcp_client.py` — `MultiServerMCPClient` 설정 (filesystem + openapi 서버)
-- [x] `config.py` — `pydantic-settings` 기반 환경변수 로딩 (`.env`)
-- [x] `prompts/system_prompt.py` — 경로 기반 프롬프트 (파일 내용 비주입, 에이전트가 MCP로 직접 읽음)
+- [x] `mcp_client.py` — `MultiServerMCPClient` 설정 (filesystem + openapi + docs 서버)
+- [x] `config.py` — `pydantic-settings` 기반 환경변수 로딩 (LLM temperature 등 튜닝 파라미터는 코드에서 관리)
+- [x] `prompts/system_prompt.py` — 경로 기반 프롬프트 (파일 내용 비주입, docs 연결 여부에 따라 동적 구성)
 
 ### 도구
 - [x] `tools/code_runner.py` — `run_pytest`, `run_ruff_check`, `run_ruff_format_check` (LangChain `@tool`)
+- [x] `tools/planning.py` — `confirm_endpoint_plan`, `set_output_directory`
 - [x] `mcp_servers/filesystem_server.py` — 자체 구현 Filesystem MCP 서버 (FastMCP)
 
+### HITL 미들웨어
+- [x] `middleware/openapi_confirm.py` — Scenario 1: 스펙 조회 후 사용자 확인
+- [x] `middleware/write_file_confirm.py` — Scenario 2+3: 코드 프리뷰 + 덮어쓰기 경고
+- [x] `middleware/test_failure.py` — Scenario 5: pytest 반복 실패 시 사용자 판단 위임
+- [x] `HumanInTheLoopMiddleware` — Scenario 4: 엔드포인트 계획 승인 (LangChain 내장)
+- [x] `ModelRetryMiddleware`, `ToolRetryMiddleware`, `ModelCallLimitMiddleware`, `SummarizationMiddleware` 적용
+
 ### UI
-- [x] `src/scp_mcp_code_agent/app.py` — Chainlit 앱 (세션별 에이전트 인스턴스, 대화 히스토리 유지)
+- [x] `src/scp_mcp_code_agent/app.py` — Chainlit 앱 (세션별 에이전트 인스턴스, HITL interrupt/resume 루프)
 
 ### 템플릿
-- [x] `mcp_code_example/server.py` — Virtual Server MCP 서버 예시 (에이전트 코드 스타일 레퍼런스)
+- [x] `mcp_code_example/server.py` — Virtual Server MCP 예시 (`Annotated+Field` 리치 프롬프트 스타일)
 - [x] `mcp_code_example/tests/test_server.py` — 예시 테스트 코드 (에이전트 테스트 스타일 레퍼런스)
 
 ### 테스트 코드
 - [x] `tests/test_tools.py` — code_runner 도구 단위 테스트 (subprocess mock)
 - [x] `tests/test_agent.py` — 시스템 프롬프트 / MCP 클라이언트 설정 테스트
 
+### 배포
+- [x] `Dockerfile` — 멀티스테이지 빌드 (uv builder → python runtime)
+- [x] `docker-compose.yml` — volume 마운트로 생성 파일 로컬 저장 (`~/scp-mcp-servers`)
+
 ### 기술 결정 (ADR)
 - [x] ADR-001: pytest/ruff는 MCP 아닌 커스텀 LangChain 도구로 구현
 - [x] ADR-002: Filesystem MCP 서버 자체 구현 (Python, Node.js 불필요)
 - [x] ADR-003: LLM = OpenAI `gpt-4o` (ChatOpenAI)
-- [x] ADR-004: 생성 코드 저장 위치 = `./generated/<service_name>_mcp_server/`
+- [x] ADR-004: 생성 코드 저장 위치 = 기본 `~/scp-mcp-servers`, 대화로 변경 가능
 - [x] ADR-005: 예시 코드는 프롬프트에 주입하지 않고 에이전트가 Filesystem MCP로 직접 읽음
+- [x] ADR-006: Docs MCP는 선택 연결 — `DOCS_MCP_URL` 미설정 시 스펙만으로 동작
+- [x] ADR-007: 생성 툴 파라미터는 `Annotated+Field` 스타일, docstring은 "Use this tool when / Workflow / Common scenarios" 구조 사용
 
 ---
 
@@ -59,6 +74,8 @@ Chainlit UI → LangChain Agent (create_agent)
 - [ ] `mcp_code_example/tests/` 테스트 통과 확인 (예시 코드 자체 검증)
 - [ ] Chainlit 앱 실행 후 E2E 시나리오 수동 검증
   - [ ] "virtual server" 입력 → 코드 생성 → lint 통과 → 테스트 통과
+  - [ ] HITL 시나리오 동작 확인 (스펙 확인 / 계획 승인 / 파일 저장 확인)
+  - [ ] `DOCS_MCP_URL` 설정 시 docs 검색 후 리치 docstring 생성 확인
 
 ---
 
@@ -76,7 +93,7 @@ Chainlit UI → LangChain Agent (create_agent)
 - [ ] OpenAPI MCP 서버 구현 (현재 외부 서버 assume 상태)
   - `get_openapi_spec(service_name: str)` 툴 노출
   - SCP 플랫폼 API 연동
-- [ ] Docker 컨테이너화
+- [ ] Docs MCP 서버 구현 (현재 외부 서버 assume 상태)
 - [ ] 생성된 MCP 서버 자동 배포 파이프라인
 
 ---
@@ -96,9 +113,17 @@ Chainlit UI → LangChain Agent (create_agent)
 - **이유**: 사용자 요구사항. `langchain-openai` 패키지 사용.
 
 ### ADR-004: 생성 코드 저장 위치
-- **결정**: `./generated/<service_name_snake_case>_mcp_server/`
-- **이유**: 프로젝트 루트 오염 방지, 서비스별 독립 디렉토리.
+- **결정**: 기본값 `~/scp-mcp-servers`, 대화 중 `set_output_directory` 툴로 변경 가능
+- **이유**: 사용자 홈 디렉토리를 기본으로 하여 Docker 볼륨 마운트 없이도 접근 가능.
 
 ### ADR-005: 예시 코드 참조 방식
 - **결정**: 시스템 프롬프트에 파일 내용 비주입 — 경로만 제공, 에이전트가 Filesystem MCP로 직접 읽음
 - **이유**: 프롬프트 토큰 낭비 방지. 에이전트가 필요한 파일만 선택적으로 읽고 최신 상태를 반영.
+
+### ADR-006: Docs MCP 선택 연결
+- **결정**: `DOCS_MCP_URL` 설정 시에만 docs 서버 연결, 미설정 시 조용히 건너뜀
+- **이유**: Docs MCP 서버 없이도 기본 동작은 완전히 가능. 연결 여부에 따라 시스템 프롬프트가 동적으로 구성됨.
+
+### ADR-007: 생성 툴 프롬프트 스타일
+- **결정**: `Annotated[type, Field(description=...)]` 파라미터 + "Use this tool when / Workflow / Common scenarios" docstring 구조
+- **이유**: AWS MCP 서버 패턴 참조. AI 어시스턴트가 툴 호출 시점과 파라미터 선택을 더 정확히 판단하도록 유도.
