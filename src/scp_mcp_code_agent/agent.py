@@ -37,7 +37,14 @@ from scp_mcp_code_agent.prompts.system_prompt import build_system_prompt
 from scp_mcp_code_agent.tools.code_runner import CODE_RUNNER_TOOLS
 
 # MCP 툴 이름 — ToolRetryMiddleware가 재시도할 대상
-_MCP_TOOL_NAMES = ["get_openapi_spec", "read_file", "write_file", "list_directory", "create_directory", "file_exists"]
+_MCP_TOOL_NAMES = [
+    "get_openapi_spec",
+    "read_file",
+    "write_file",
+    "list_directory",
+    "create_directory",
+    "file_exists",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -46,32 +53,39 @@ _MCP_TOOL_NAMES = ["get_openapi_spec", "read_file", "write_file", "list_director
 
 
 def _build_middleware() -> list:
-    """Build the ordered middleware stack from settings."""
+    """Build the ordered middleware stack.
+
+    값이 변경될 가능성이 낮은 미들웨어 튜닝 파라미터는 환경변수 대신
+    코드에서 직접 관리한다. 운영 환경 변경이 필요한 경우 코드를 수정하고
+    재배포하는 것이 의도된 방식이다.
+    """
     return [
         # 1. OpenAI API 일시적 오류(rate limit, 5xx 등) 자동 재시도
         ModelRetryMiddleware(
-            max_retries=settings.middleware_retry_max,
-            backoff_factor=settings.middleware_retry_backoff_factor,
+            max_retries=3,
+            backoff_factor=2.0,
         ),
         # 2. MCP 툴 호출 일시적 오류(subprocess 재시작, HTTP timeout 등) 자동 재시도
+        #    code_runner 툴(run_pytest, run_ruff_check)은 로컬 실행이므로 제외
         ToolRetryMiddleware(
-            max_retries=settings.middleware_retry_max,
-            backoff_factor=settings.middleware_retry_backoff_factor,
+            max_retries=3,
+            backoff_factor=2.0,
             initial_delay=1.0,
             tools=_MCP_TOOL_NAMES,
         ),
         # 3. 단일 서비스 생성 당 최대 모델 호출 횟수 제한
-        #    lint/테스트 수정 루프가 끝나지 않을 때 비용 폭주 방지
+        #    lint/테스트 수정 루프가 수렴하지 않을 때 비용 폭주 방지
         ModelCallLimitMiddleware(
-            run_limit=settings.middleware_model_call_run_limit,
+            run_limit=20,
             exit_behavior="end",  # 초과 시 에러 대신 현재까지 결과 반환
         ),
         # 4. 컨텍스트 토큰이 임계치 초과 시 오래된 메시지 요약 압축
         #    반복 수정 루프에서 누적되는 ruff/pytest 출력 정리
+        #    요약은 저렴한 gpt-4o-mini로 수행
         SummarizationMiddleware(
-            model=settings.middleware_summarization_model,
-            trigger=("tokens", settings.middleware_summarization_trigger_tokens),
-            keep=("messages", settings.middleware_summarization_keep_messages),
+            model="gpt-4o-mini",
+            trigger=("tokens", 60_000),
+            keep=("messages", 10),
         ),
     ]
 
