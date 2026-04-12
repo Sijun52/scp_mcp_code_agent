@@ -33,6 +33,22 @@ class Settings(BaseSettings):
     agent_max_iterations: int = 25
     agent_verbose: bool = True
 
+    # Middleware — ModelCallLimitMiddleware
+    # 단일 서비스 생성 당 최대 모델 호출 횟수 (무한루프 / 비용 폭주 방지)
+    middleware_model_call_run_limit: int = 20
+
+    # Middleware — ToolRetryMiddleware / ModelRetryMiddleware
+    middleware_retry_max: int = 3
+    middleware_retry_backoff_factor: float = 2.0
+
+    # Middleware — SummarizationMiddleware
+    # 요약에 사용할 모델 (저렴한 모델 권장)
+    middleware_summarization_model: str = "gpt-4o-mini"
+    # 이 토큰 수 초과 시 요약 시작
+    middleware_summarization_trigger_tokens: int = 60000
+    # 요약 후 원본으로 남길 최근 메시지 수
+    middleware_summarization_keep_messages: int = 10
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
