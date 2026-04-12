@@ -1,4 +1,11 @@
-"""Application configuration loaded from environment variables."""
+"""Application configuration loaded from environment variables.
+
+환경변수로 관리하는 것:
+  - API 키, MCP 서버 URL 등 배포 환경마다 달라지는 값
+
+코드에서 직접 관리하는 것 (변경 시 재배포):
+  - LLM temperature, example_dir, agent 반복 설정 등 튜닝 파라미터
+"""
 
 from pathlib import Path
 
@@ -7,36 +14,34 @@ from pydantic_settings import BaseSettings
 
 load_dotenv()
 
+# mcp_code_example 디렉토리는 패키지 위치 기준 상대경로로 고정
+# src/scp_mcp_code_agent/config.py → 상위 3단계 = 프로젝트 루트
+_EXAMPLE_DIR: Path = Path(__file__).parent.parent.parent / "mcp_code_example"
+
 
 class Settings(BaseSettings):
     # LLM
     openai_api_key: str = ""
     llm_model: str = "gpt-4o"
-    llm_temperature: float = 0.2
 
-    # OpenAPI MCP server connection
-    openapi_mcp_transport: str = "stdio"
-    openapi_mcp_command: str = "python"
+    # OpenAPI MCP server connection (스펙 제공 전용 — 인증 불필요)
+    openapi_mcp_transport: str = "streamable_http"
+    openapi_mcp_url: str = ""          # streamable_http / sse 방식
+    openapi_mcp_command: str = "python"  # stdio 방식 fallback
     openapi_mcp_args: str = "-m openapi_mcp_server"
-    openapi_mcp_url: str = ""  # used when transport=sse or streamable_http
 
-    # Cloud platform credentials (forwarded to OpenAPI MCP server env)
-    cloud_api_base_url: str = "https://api.example.com"
-    cloud_api_key: str = ""
-    cloud_tenant_id: str = ""
-
-    # File system
-    output_dir: Path = Path("./generated")
-    example_dir: Path = Path("./mcp_code_example")
-
-    # Agent behaviour
-    agent_max_iterations: int = 25
-    agent_verbose: bool = True
+    # 생성된 MCP 서버 저장 위치 (기본: 사용자 홈 디렉토리)
+    output_dir: Path = Path.home() / "scp-mcp-servers"
 
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"
+
+    @property
+    def example_dir(self) -> Path:
+        """예시 코드 디렉토리 — 코드 고정값, env 오버라이드 불필요."""
+        return _EXAMPLE_DIR
 
     @property
     def openapi_mcp_args_list(self) -> list[str]:

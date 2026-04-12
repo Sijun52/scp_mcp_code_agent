@@ -1,12 +1,6 @@
-"""Scenario 4 — 엔드포인트 계획 확인 툴.
+"""Planning tools — 에이전트가 코드 생성 전/중에 사용하는 워크플로우 툴."""
 
-에이전트가 OpenAPI 스펙을 분석한 뒤 어떤 엔드포인트를 MCP 툴로
-구현할지 계획을 세우면, 코드 작성 전에 반드시 이 툴을 호출해야 한다.
-
-HumanInTheLoopMiddleware가 이 툴 호출을 가로채 사용자에게 계획을 보여주고
-approve / reject 선택을 요청한다. 에이전트는 툴 반환값으로 사용자 결정을
-알 수 있다 (approved / rejected).
-"""
+from pathlib import Path
 
 from langchain_core.tools import tool
 
@@ -33,8 +27,26 @@ def confirm_endpoint_plan(
         "rejected"  — 사용자가 거절함, 툴 목록을 재검토 후 재호출 필요
     """
     # 실제 반환값은 HumanInTheLoopMiddleware가 사용자 결정으로 대체한다.
-    # 이 코드는 middleware가 없는 환경(테스트 등)에서의 기본 동작이다.
     return "approved"
 
 
-PLANNING_TOOLS = [confirm_endpoint_plan]
+@tool
+def set_output_directory(path: str) -> str:
+    """생성된 MCP 서버 파일이 저장될 출력 디렉토리를 변경한다.
+
+    사용자가 대화 중 저장 경로를 바꾸고 싶을 때 호출한다.
+    이 툴을 호출한 이후의 모든 write_file 작업은 반환된 경로를 기준으로 한다.
+
+    Args:
+        path: 새 출력 디렉토리 경로. 절대경로 또는 '~' 포함 경로 모두 허용.
+
+    Returns:
+        유효성 검증된 절대경로 문자열.
+        이후 파일 저장 시 이 경로를 기준으로 사용할 것.
+    """
+    resolved = Path(path).expanduser().resolve()
+    resolved.mkdir(parents=True, exist_ok=True)
+    return str(resolved)
+
+
+PLANNING_TOOLS = [confirm_endpoint_plan, set_output_directory]

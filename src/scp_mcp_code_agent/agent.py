@@ -138,7 +138,7 @@ async def create_agent(extra_callbacks: list | None = None):  # noqa: RUF029
 
     llm = ChatOpenAI(
         model=settings.llm_model,
-        temperature=settings.llm_temperature,
+        temperature=0.2,
         openai_api_key=settings.openai_api_key,
     )
 

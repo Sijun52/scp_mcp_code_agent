@@ -129,12 +129,16 @@ class TestSettings:
         finally:
             settings.openapi_mcp_args = original
 
-    def test_output_dir_is_path(self):
+    def test_output_dir_defaults_to_home(self):
         from scp_mcp_code_agent.config import settings
 
         assert isinstance(settings.output_dir, Path)
+        # 기본값은 홈 디렉토리 하위여야 한다
+        assert str(Path.home()) in str(settings.output_dir)
 
-    def test_example_dir_is_path(self):
+    def test_example_dir_is_code_relative(self):
         from scp_mcp_code_agent.config import settings
 
         assert isinstance(settings.example_dir, Path)
+        # example_dir은 env가 아닌 코드 위치 기준으로 결정된다
+        assert settings.example_dir.name == "mcp_code_example"

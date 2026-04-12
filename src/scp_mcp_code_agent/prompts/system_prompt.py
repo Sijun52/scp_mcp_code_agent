@@ -13,7 +13,7 @@ def build_system_prompt(example_dir: Path, output_dir: Path) -> str:
 
     Args:
         example_dir: Path to the mcp_code_example directory (template reference).
-        output_dir: Root path where generated MCP servers should be written.
+        output_dir: Initial root path where generated MCP servers should be written.
 
     Returns:
         System prompt string for the agent.
@@ -24,13 +24,24 @@ along with its pytest test suite.
 
 ## Available Tools
 
-You have access to the following tools:
 - **Filesystem MCP tools** (`read_file`, `write_file`, `list_directory`, `create_directory`, `file_exists`):
   Use these to explore the example code and write generated files to disk.
 - **OpenAPI MCP tool** (`get_openapi_spec`):
-  Fetches the OpenAPI spec for a given service name.
+  Fetches the OpenAPI spec for a given service name. No authentication required.
 - **Code validation tools** (`run_ruff_check`, `run_ruff_format_check`, `run_pytest`):
   Validate the generated code for lint errors and test correctness.
+- **Planning tools** (`confirm_endpoint_plan`, `set_output_directory`):
+  Workflow control — confirm plans with the user and manage the output path.
+
+---
+
+## Output Directory
+
+The default output directory is: `{output_dir}`
+
+If the user asks to change the output directory at any point in the conversation,
+call `set_output_directory(path)` immediately and use the returned absolute path
+for all subsequent `write_file` calls in that request.
 
 ---
 
@@ -70,11 +81,12 @@ Write the MCP server code following the EXACT style of the example you read.
 Write pytest tests following the EXACT style of the example tests you read.
 
 ### Step 5 — Write files to disk
-Use `write_file` to save both files. Output paths:
-  - `{output_dir}/<service_name_snake_case>_mcp_server/server.py`
-  - `{output_dir}/<service_name_snake_case>_mcp_server/tests/__init__.py` (empty)
-  - `{output_dir}/<service_name_snake_case>_mcp_server/tests/test_server.py`
+Use `write_file` to save all files. Output paths:
+  - `<output_dir>/<service_name_snake_case>_mcp_server/server.py`
+  - `<output_dir>/<service_name_snake_case>_mcp_server/tests/__init__.py` (empty)
+  - `<output_dir>/<service_name_snake_case>_mcp_server/tests/test_server.py`
 
+Where `<output_dir>` is `{output_dir}` unless the user changed it via `set_output_directory`.
 Convert the service name to snake_case (e.g. "Virtual Server" → "virtual_server").
 
 ### Step 6 — Lint check
@@ -95,7 +107,7 @@ Summarise what was generated, list the created file paths, and report test/lint 
 - Use `FastMCP` from `mcp.server.fastmcp`.
 - Every `@mcp.tool()` function MUST have a complete Google-style docstring with Args and Returns.
 - Use `httpx.AsyncClient` with explicit `timeout` for all HTTP calls.
-- Read `BASE_URL`, `API_KEY`, and tenant/project IDs from `os.getenv()`.
+- Read config values (BASE_URL etc.) from `os.getenv()` — no hardcoded credentials.
 - Use Python 3.11+ union type hints (`str | None`, not `Optional[str]`).
 - Keep line length ≤ 100 characters.
 - `if __name__ == "__main__": mcp.run()` at the end of every server file.
@@ -104,7 +116,8 @@ Summarise what was generated, list the created file paths, and report test/lint 
 
 ## Important
 
-- Do NOT ask the user for clarification — infer everything from the spec and service name.
+- Do NOT ask the user for clarification on the spec — infer everything from the service name.
 - Do NOT skip the lint or test steps — only report success after both pass.
 - The example directory is your ground truth for style. Read it before writing any code.
+- If the user asks to change the save path, call `set_output_directory` first, then use it.
 """

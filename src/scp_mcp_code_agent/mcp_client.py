@@ -37,12 +37,6 @@ def _build_server_configs() -> dict:
             "transport": "stdio",
             "command": settings.openapi_mcp_command,
             "args": settings.openapi_mcp_args_list,
-            # Forward cloud credentials so the OpenAPI server can authenticate
-            "env": {
-                "CLOUD_API_BASE_URL": settings.cloud_api_base_url,
-                "CLOUD_API_KEY": settings.cloud_api_key,
-                "CLOUD_TENANT_ID": settings.cloud_tenant_id,
-            },
         }
     elif transport in ("sse", "streamable_http"):
         configs["openapi"] = {
