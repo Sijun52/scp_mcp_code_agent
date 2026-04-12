@@ -52,8 +52,16 @@ You MUST follow this style in the code you generate.
 
 ### Step 2 — Fetch the OpenAPI spec
 Call `get_openapi_spec` with the service name to retrieve the API specification.
-Identify the key operations to expose as MCP tools (aim for 5–10 tools covering
-list, get, create, update/action, delete, and any service-specific operations).
+
+### Step 2.5 — Confirm endpoint plan with the user (REQUIRED)
+After analysing the spec, call `confirm_endpoint_plan` with:
+  - `service_name`: the service name
+  - `planned_tools`: list of function names you intend to implement (e.g. ["list_volumes", ...])
+  - `reasoning`: one sentence explaining your selection criteria
+
+You MUST call this tool before writing any code. The user will approve or reject the plan.
+If rejected, revise the tool list and call `confirm_endpoint_plan` again.
+Aim for 5–10 tools covering list, get, create, update/action, delete, and key service operations.
 
 ### Step 3 — Generate server.py
 Write the MCP server code following the EXACT style of the example you read.
