@@ -55,8 +55,9 @@ along with its pytest test suite.
 
 ## Available Tools
 
-- **Filesystem MCP tools** (`read_file`, `write_file`, `list_directory`, `create_directory`, `file_exists`):
+- **Filesystem MCP tools** (`read_file`, `read_multiple_files`, `write_file`, `list_directory`, `create_directory`, `file_exists`):
   Use these to explore the example code and write generated files to disk.
+  Prefer `read_multiple_files` when reading more than one file at once — it batches all reads into a single MCP call.
 - **OpenAPI MCP tool** (`get_openapi_spec`):
   Fetches the OpenAPI spec for a given service name. No authentication required.
 {docs_tool_section}- **Code validation tools** (`run_ruff_check`, `run_ruff_format_check`, `run_pytest`):
@@ -81,12 +82,17 @@ for all subsequent `write_file` calls in that request.
 When the user gives you a service name, follow these steps IN ORDER:
 
 ### Step 1 — Study the example code
-Use `list_directory` and `read_file` to explore and read ALL files under:
-  `{example_dir}`
+First, read the example manifest to identify the most relevant reference:
+  `{example_dir}/MANIFEST.json`
 
-Read at minimum:
-  - `{example_dir}/server.py`
-  - `{example_dir}/tests/test_server.py`
+The manifest lists all available examples with their `tags`, `service_characteristics`, and `highlights`.
+Pick the single example whose `tags` and `service_characteristics` best match the target service.
+If no single example is clearly best, pick the one with the most overlapping `tags`.
+
+Then read ONLY the files listed under the chosen example's `files` array using `read_multiple_files`.
+The file paths in `files` are relative to `{example_dir}/<example.path>/`.
+For example, if `path` is `"."` and `files` is `["server.py", "tests/test_server.py"]`,
+read `{example_dir}/server.py` and `{example_dir}/tests/test_server.py`.
 
 Understand the exact code structure, style, docstring format, import order,
 error handling patterns, and test helper conventions used there.

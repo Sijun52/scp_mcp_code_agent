@@ -33,6 +33,10 @@ Chainlit UI → LangChain Agent (create_agent)
 - [x] `tools/planning.py` — `confirm_endpoint_plan`, `set_output_directory`
 - [x] `mcp_servers/filesystem_server.py` — 자체 구현 Filesystem MCP 서버 (FastMCP)
 
+### 예시 코드 관리
+- [x] `mcp_code_example/MANIFEST.json` — 예시 프로젝트 인덱스 (name/description/tags/path/files/highlights)
+- [x] `prompts/system_prompt.py` Step 1 업데이트 — MANIFEST 기반 best-match 예시 선택 → `read_multiple_files` 배치 읽기
+
 ### HITL 미들웨어
 - [x] `middleware/openapi_confirm.py` — Scenario 1: 스펙 조회 후 사용자 확인
 - [x] `middleware/write_file_confirm.py` — Scenario 2+3: 코드 프리뷰 + 덮어쓰기 경고

@@ -55,6 +55,7 @@ scp_mcp_code_agent/
 │       └── filesystem_server.py        # 자체 구현 Filesystem MCP 서버 (read_multiple_files 포함)
 │
 ├── mcp_code_example/                   # 에이전트 코드 스타일 레퍼런스
+│   ├── MANIFEST.json                   # 예시 프로젝트 인덱스 (에이전트가 best-match 선택에 사용)
 │   ├── server.py                       # Virtual Server MCP 예시 (Annotated+Field 리치 프롬프트)
 │   └── tests/
 │       └── test_server.py              # 예시 테스트 코드
@@ -230,6 +231,7 @@ uv run pytest mcp_code_example/tests/ -v
 | **ruff 병렬 실행** | `run_ruff_all` 툴 — `asyncio.gather()`로 lint + format 동시 실행 | 툴 호출 2회 → 1회, 실행 시간 절반 |
 | **OpenAPI spec 캐싱** | `_wrap_spec_tool_with_cache()` — TTL 5분 in-memory 캐시 | 동일 세션 내 반복 스펙 조회 즉시 반환 |
 | **파일 읽기 배치** | `read_multiple_files` 툴 — 여러 파일을 단일 MCP 호출로 읽기 | N번 `read_file` → 1번으로 단축 |
+| **MANIFEST 기반 예시 선택** | `MANIFEST.json` 인덱스 → tags/characteristics 매칭 → `read_multiple_files` 배치 읽기 | 불필요한 예시 파일 로드 제거, 서비스별 최적 스타일 레퍼런스 자동 선택 |
 | **컨텍스트 관리** | `SummarizationMiddleware` 트리거 60k → 80k 토큰 | 불필요한 조기 요약 방지 |
 | **히스토리 제한** | `_CHAT_HISTORY_MAX = 30` — 세션당 마지막 30개 메시지만 유지 | 장기 세션 컨텍스트 무한 누적 방지 |
 | **타이밍 계측** | `TimingCallbackHandler` — LLM/툴 호출별 실행 시간 INFO 로그 | 실제 병목 식별 가능 |
@@ -261,6 +263,25 @@ OPENAPI_MCP_ARGS=-m openapi_mcp_server
 ```
 
 > OpenAPI MCP 서버는 `get_openapi_spec(service_name: str)` 툴을 노출해야 합니다.
+
+### 예시 코드 관리 (`mcp_code_example/MANIFEST.json`)
+
+에이전트는 코드 생성 전 `MANIFEST.json`을 읽어 서비스 특성(`tags`, `service_characteristics`)이 가장 유사한 예시를 선택합니다.
+선택된 예시의 파일만 `read_multiple_files`로 배치 읽기하여 불필요한 파일 로드를 줄입니다.
+
+새 예시를 추가할 때는 `mcp_code_example/<예시명>/` 디렉토리를 만들고 `MANIFEST.json`에 항목을 추가하세요:
+
+```json
+{
+  "name": "block_storage",
+  "description": "블록 스토리지 볼륨 관리 MCP 서버 예시",
+  "tags": ["storage", "block", "volume", "IaaS"],
+  "service_characteristics": ["CRUD 기반 리소스 관리", "비동기 작업"],
+  "path": "block_storage",
+  "files": ["server.py", "tests/test_server.py"],
+  "highlights": ["볼륨 스냅샷 처리", "attach/detach 작업"]
+}
+```
 
 ### Docs MCP 서버 (선택)
 

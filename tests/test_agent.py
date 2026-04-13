@@ -57,6 +57,18 @@ class TestBuildSystemPrompt:
         assert "read_file" in prompt
         assert "list_directory" in prompt
 
+    def test_references_manifest_json(self, tmp_path: Path):
+        """Step 1 must instruct the agent to read MANIFEST.json first."""
+        prompt = build_system_prompt(tmp_path / "example", tmp_path / "generated")
+
+        assert "MANIFEST.json" in prompt
+
+    def test_references_read_multiple_files(self, tmp_path: Path):
+        """Prompt should mention read_multiple_files for batch file reading."""
+        prompt = build_system_prompt(tmp_path / "example", tmp_path / "generated")
+
+        assert "read_multiple_files" in prompt
+
 
 # ---------------------------------------------------------------------------
 # MCP client config builder
