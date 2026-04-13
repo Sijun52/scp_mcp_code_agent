@@ -96,6 +96,31 @@ def file_exists(path: str) -> bool:
     return Path(path).exists()
 
 
+@mcp.tool()
+def read_multiple_files(paths: list[str]) -> dict[str, str]:
+    """Read multiple files in a single call and return their contents.
+
+    Use this tool when you need to read several files at once (e.g. exploring
+    an example directory). This avoids making a separate read_file call for
+    each file and reduces round-trips between the agent and the filesystem.
+
+    Args:
+        paths: List of absolute or relative paths to read.
+
+    Returns:
+        Dict mapping each path to its UTF-8 file contents.
+        If a file cannot be read, its value will be an error message string
+        prefixed with "[ERROR]".
+    """
+    results: dict[str, str] = {}
+    for path in paths:
+        try:
+            results[path] = Path(path).read_text(encoding="utf-8")
+        except Exception as e:
+            results[path] = f"[ERROR] {e}"
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------

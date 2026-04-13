@@ -9,7 +9,7 @@ Design rationale (ADR-001):
   routing them through an MCP server.
 """
 
-import subprocess
+import asyncio
 import sys
 from pathlib import Path
 
@@ -21,21 +21,17 @@ from langchain_core.tools import tool
 # ---------------------------------------------------------------------------
 
 
-def _run(cmd: list[str], cwd: str | Path | None = None) -> str:
-    """Run *cmd* in a subprocess and return combined stdout+stderr."""
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
+async def _run(cmd: list[str], cwd: str | Path | None = None) -> str:
+    """Run *cmd* in a subprocess asynchronously and return combined stdout+stderr."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
         cwd=str(cwd) if cwd else None,
     )
-    output = ""
-    if result.stdout:
-        output += result.stdout
-    if result.stderr:
-        output += result.stderr
-    return_code_line = f"\n[exit code: {result.returncode}]"
-    return output + return_code_line
+    stdout, stderr = await proc.communicate()
+    output = (stdout.decode() if stdout else "") + (stderr.decode() if stderr else "")
+    return output + f"\n[exit code: {proc.returncode}]"
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +40,7 @@ def _run(cmd: list[str], cwd: str | Path | None = None) -> str:
 
 
 @tool
-def run_pytest(test_path: str, working_dir: str = ".") -> str:
+async def run_pytest(test_path: str, working_dir: str = ".") -> str:
     """Run pytest against a test file or directory and return the output.
 
     Args:
@@ -57,11 +53,11 @@ def run_pytest(test_path: str, working_dir: str = ".") -> str:
         Exit code 0 means all tests passed.
     """
     cmd = [sys.executable, "-m", "pytest", test_path, "-v", "--tb=short"]
-    return _run(cmd, cwd=working_dir)
+    return await _run(cmd, cwd=working_dir)
 
 
 @tool
-def run_ruff_check(target_path: str, working_dir: str = ".") -> str:
+async def run_ruff_check(target_path: str, working_dir: str = ".") -> str:
     """Run ruff lint check against a file or directory and return the output.
 
     Args:
@@ -74,11 +70,11 @@ def run_ruff_check(target_path: str, working_dir: str = ".") -> str:
         Exit code 0 means no lint errors found.
     """
     cmd = [sys.executable, "-m", "ruff", "check", target_path]
-    return _run(cmd, cwd=working_dir)
+    return await _run(cmd, cwd=working_dir)
 
 
 @tool
-def run_ruff_format_check(target_path: str, working_dir: str = ".") -> str:
+async def run_ruff_format_check(target_path: str, working_dir: str = ".") -> str:
     """Check code formatting with ruff format --check (does NOT modify files).
 
     Args:
@@ -90,11 +86,37 @@ def run_ruff_format_check(target_path: str, working_dir: str = ".") -> str:
         Exit code 0 means formatting is correct.
     """
     cmd = [sys.executable, "-m", "ruff", "format", "--check", target_path]
-    return _run(cmd, cwd=working_dir)
+    return await _run(cmd, cwd=working_dir)
+
+
+@tool
+async def run_ruff_all(target_path: str, working_dir: str = ".") -> str:
+    """Run ruff lint check AND ruff format check simultaneously in a single call.
+
+    Prefer this tool over calling run_ruff_check and run_ruff_format_check
+    separately — it runs both in parallel and returns a combined report,
+    cutting the number of tool calls and wall-clock time in half.
+
+    Args:
+        target_path: Path to a .py file or directory to check.
+        working_dir: Working directory from which to run ruff.
+
+    Returns:
+        Combined report with sections for lint and format results.
+        Overall exit code is non-zero if either check failed.
+    """
+    lint_cmd = [sys.executable, "-m", "ruff", "check", target_path]
+    fmt_cmd = [sys.executable, "-m", "ruff", "format", "--check", target_path]
+
+    lint_result, fmt_result = await asyncio.gather(
+        _run(lint_cmd, cwd=working_dir),
+        _run(fmt_cmd, cwd=working_dir),
+    )
+    return f"=== ruff check ===\n{lint_result}\n=== ruff format --check ===\n{fmt_result}"
 
 
 # ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
 
-CODE_RUNNER_TOOLS = [run_pytest, run_ruff_check, run_ruff_format_check]
+CODE_RUNNER_TOOLS = [run_pytest, run_ruff_check, run_ruff_format_check, run_ruff_all]

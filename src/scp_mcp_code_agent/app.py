@@ -16,13 +16,19 @@ Interrupt types:
   - test_failure        (Scenario 5) : pytest 실패 → retry / save_as_is / abort
 """
 
+import logging
 import uuid
+
+_CHAT_HISTORY_MAX = 30  # 세션당 유지할 최대 메시지 수
 
 import chainlit as cl
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.types import Command
 
 from scp_mcp_code_agent.agent import create_agent
+from scp_mcp_code_agent.callbacks import TimingCallbackHandler
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
 # ---------------------------------------------------------------------------
 # Interrupt 핸들러
@@ -191,7 +197,7 @@ async def on_chat_start() -> None:
         )
     ).send()
 
-    graph, mcp_ctx = await create_agent()
+    graph, mcp_ctx = await create_agent(extra_callbacks=[TimingCallbackHandler()])
     session_id = str(uuid.uuid4())
 
     cl.user_session.set("graph", graph)
@@ -235,9 +241,10 @@ async def on_message(message: cl.Message) -> None:
                 input_data={"messages": chat_history},
                 config=config,
             )
-            # 전체 메시지 이력 갱신
+            # 전체 메시지 이력 갱신 (최대 _CHAT_HISTORY_MAX 개로 제한)
             state = await graph.aget_state(config)
-            cl.user_session.set("chat_history", state.values.get("messages", chat_history))
+            all_messages = state.values.get("messages", chat_history)
+            cl.user_session.set("chat_history", all_messages[-_CHAT_HISTORY_MAX:])
 
             step.output = output
 

@@ -28,7 +28,9 @@ create_agent()  — async factory, returns (compiled_graph, mcp_ctx).
 run_agent()     — convenience wrapper for CLI / testing.
 """
 
-from langchain.agents import create_agent
+import time
+
+from langchain.agents import create_agent as _langchain_create_agent
 from langchain.agents.middleware import (
     HumanInTheLoopMiddleware,
     ModelCallLimitMiddleware,
@@ -52,10 +54,54 @@ from scp_mcp_code_agent.prompts.system_prompt import build_system_prompt
 from scp_mcp_code_agent.tools.code_runner import CODE_RUNNER_TOOLS
 from scp_mcp_code_agent.tools.planning import PLANNING_TOOLS
 
+# ---------------------------------------------------------------------------
+# OpenAPI spec TTL cache
+# ---------------------------------------------------------------------------
+
+_SPEC_CACHE_TTL = 300  # seconds
+
+
+def _wrap_spec_tool_with_cache(tool: BaseTool) -> BaseTool:
+    """Wrap get_openapi_spec with an in-memory TTL cache.
+
+    The OpenAPI spec for a given service rarely changes within a session.
+    Caching avoids redundant fetches when the agent references the same
+    spec multiple times (e.g. during iterative code fixes).
+
+    Cache key  : the raw input string (service_name)
+    TTL        : _SPEC_CACHE_TTL seconds (default 5 min)
+    """
+    cache: dict[str, tuple[str, float]] = {}
+
+    original_run = tool._run
+    original_arun = tool._arun
+
+    def _cached_run(service_name: str, **kwargs) -> str:
+        entry = cache.get(service_name)
+        if entry and (time.monotonic() - entry[1]) < _SPEC_CACHE_TTL:
+            return entry[0]
+        result = original_run(service_name, **kwargs)
+        cache[service_name] = (result, time.monotonic())
+        return result
+
+    async def _cached_arun(service_name: str, **kwargs) -> str:
+        entry = cache.get(service_name)
+        if entry and (time.monotonic() - entry[1]) < _SPEC_CACHE_TTL:
+            return entry[0]
+        result = await original_arun(service_name, **kwargs)
+        cache[service_name] = (result, time.monotonic())
+        return result
+
+    tool._run = _cached_run
+    tool._arun = _cached_arun
+    return tool
+
+
 # MCP 툴 이름 — ToolRetryMiddleware 재시도 대상 (로컬 code_runner 툴은 제외)
 _MCP_TOOL_NAMES = [
     "get_openapi_spec",
     "read_file",
+    "read_multiple_files",
     "write_file",
     "list_directory",
     "create_directory",
@@ -93,7 +139,7 @@ def _build_middleware() -> list:
         ),
         SummarizationMiddleware(
             model="gpt-4o-mini",
-            trigger=("tokens", 60_000),
+            trigger=("tokens", 80_000),
             keep=("messages", 10),
         ),
         # ── HITL ────────────────────────────────────────────────────────────
@@ -146,10 +192,13 @@ async def create_agent(extra_callbacks: list | None = None):  # noqa: RUF029
     mcp_ctx = create_mcp_client()
     client = await mcp_ctx.__aenter__()
 
-    mcp_tools: list[BaseTool] = client.get_tools()
+    mcp_tools: list[BaseTool] = [
+        _wrap_spec_tool_with_cache(t) if t.name == "get_openapi_spec" else t
+        for t in client.get_tools()
+    ]
     all_tools: list[BaseTool] = mcp_tools + CODE_RUNNER_TOOLS + PLANNING_TOOLS
 
-    graph = create_agent(
+    graph = _langchain_create_agent(
         model=llm,
         tools=all_tools,
         system_prompt=system_prompt,

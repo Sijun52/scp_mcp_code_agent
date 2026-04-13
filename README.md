@@ -18,8 +18,8 @@ LangChain Agent  (langchain.agents.create_agent + gpt-4o)
     ├─► OpenAPI MCP Server     → 서비스 OpenAPI 스펙 조회
     ├─► Filesystem MCP Server  → mcp_code_example 읽기 / 코드 파일 저장
     ├─► Docs MCP Server        → SCP 상품 문서 검색 (선택, DOCS_MCP_URL 설정 시)
-    ├─► run_ruff_check          → 생성 코드 Lint 검증
-    └─► run_pytest              → 생성 테스트 코드 실행
+    ├─► run_ruff_all            → Lint + 포맷 동시 검증 (asyncio.gather 병렬)
+    └─► run_pytest              → 생성 테스트 코드 실행 (async, non-blocking)
     │
     ▼
 ~/scp-mcp-servers/<service>_mcp_server/
@@ -37,8 +37,9 @@ LangChain Agent  (langchain.agents.create_agent + gpt-4o)
 ```
 scp_mcp_code_agent/
 ├── src/scp_mcp_code_agent/
-│   ├── app.py                          # Chainlit UI 진입점
-│   ├── agent.py                        # create_agent 팩토리 + 미들웨어 스택
+│   ├── app.py                          # Chainlit UI 진입점 (히스토리 최대 30개 유지)
+│   ├── agent.py                        # create_agent 팩토리 + 미들웨어 스택 + spec 캐시
+│   ├── callbacks.py                    # TimingCallbackHandler — 툴/LLM 실행 시간 계측
 │   ├── mcp_client.py                   # MultiServerMCPClient 설정 (filesystem/openapi/docs)
 │   ├── config.py                       # 환경변수 (.env) 로딩 (pydantic-settings)
 │   ├── middleware/                      # HITL 미들웨어 (5개 시나리오)
@@ -46,20 +47,26 @@ scp_mcp_code_agent/
 │   │   ├── write_file_confirm.py       # Scenario 2+3: 코드 프리뷰 + 덮어쓰기 경고
 │   │   └── test_failure.py             # Scenario 5: pytest 반복 실패 시 판단 위임
 │   ├── tools/
-│   │   ├── code_runner.py              # run_pytest / run_ruff_check (LangChain 도구)
+│   │   ├── code_runner.py              # run_pytest / run_ruff_check / run_ruff_all (async)
 │   │   └── planning.py                 # confirm_endpoint_plan / set_output_directory
 │   ├── prompts/
 │   │   └── system_prompt.py            # 시스템 프롬프트 빌더 (docs 연결 여부 반영)
 │   └── mcp_servers/
-│       └── filesystem_server.py        # 자체 구현 Filesystem MCP 서버
+│       └── filesystem_server.py        # 자체 구현 Filesystem MCP 서버 (read_multiple_files 포함)
 │
 ├── mcp_code_example/                   # 에이전트 코드 스타일 레퍼런스
 │   ├── server.py                       # Virtual Server MCP 예시 (Annotated+Field 리치 프롬프트)
 │   └── tests/
 │       └── test_server.py              # 예시 테스트 코드
 │
-├── tests/                              # 프로젝트 단위 테스트
+├── tests/                              # 단위 테스트 (커버리지 99%)
 │   ├── test_agent.py
+│   ├── test_agent_helpers.py
+│   ├── test_app.py
+│   ├── test_callbacks.py
+│   ├── test_filesystem_server.py
+│   ├── test_middleware.py
+│   ├── test_planning.py
 │   └── test_tools.py
 │
 ├── Dockerfile                          # 멀티스테이지 빌드
@@ -196,6 +203,9 @@ Chainlit 채팅창에 서비스명을 입력하면 에이전트가 자동으로 
 
 ```bash
 uv run pytest tests/ -v
+
+# 커버리지 포함 (99%)
+uv run pytest tests/ --cov=scp_mcp_code_agent --cov-report=term-missing
 ```
 
 ### Lint 체크
@@ -209,6 +219,21 @@ uv run ruff check src/ tests/
 ```bash
 uv run pytest mcp_code_example/tests/ -v
 ```
+
+---
+
+## 성능 최적화
+
+| 항목 | 방식 | 효과 |
+|------|------|------|
+| **Async subprocess** | `subprocess.run()` → `asyncio.create_subprocess_exec()` | pytest/ruff 실행(10~30s) 중 이벤트 루프 블로킹 제거 |
+| **ruff 병렬 실행** | `run_ruff_all` 툴 — `asyncio.gather()`로 lint + format 동시 실행 | 툴 호출 2회 → 1회, 실행 시간 절반 |
+| **OpenAPI spec 캐싱** | `_wrap_spec_tool_with_cache()` — TTL 5분 in-memory 캐시 | 동일 세션 내 반복 스펙 조회 즉시 반환 |
+| **파일 읽기 배치** | `read_multiple_files` 툴 — 여러 파일을 단일 MCP 호출로 읽기 | N번 `read_file` → 1번으로 단축 |
+| **컨텍스트 관리** | `SummarizationMiddleware` 트리거 60k → 80k 토큰 | 불필요한 조기 요약 방지 |
+| **히스토리 제한** | `_CHAT_HISTORY_MAX = 30` — 세션당 마지막 30개 메시지만 유지 | 장기 세션 컨텍스트 무한 누적 방지 |
+| **타이밍 계측** | `TimingCallbackHandler` — LLM/툴 호출별 실행 시간 INFO 로그 | 실제 병목 식별 가능 |
+| **vLLM Prefix 캐싱** | 서버 실행 시 `--enable-prefix-caching` 플래그 | 시스템 프롬프트 prefill 재계산 skip, TTFT 단축 |
 
 ---
 

@@ -69,13 +69,43 @@ Chainlit UI → LangChain Agent (create_agent)
 ## Phase 2: 검증 🔲
 
 - [ ] `uv sync --all-extras` 후 패키지 설치 확인
-- [ ] `uv run pytest tests/ -v` — 단위 테스트 전체 통과 확인
+- [x] `uv run pytest tests/ -v` — 124개 테스트 통과 (커버리지 99%)
 - [ ] `uv run ruff check src/ tests/` — lint 통과 확인
 - [ ] `mcp_code_example/tests/` 테스트 통과 확인 (예시 코드 자체 검증)
 - [ ] Chainlit 앱 실행 후 E2E 시나리오 수동 검증
   - [ ] "virtual server" 입력 → 코드 생성 → lint 통과 → 테스트 통과
   - [ ] HITL 시나리오 동작 확인 (스펙 확인 / 계획 승인 / 파일 저장 확인)
   - [ ] `DOCS_MCP_URL` 설정 시 docs 검색 후 리치 docstring 생성 확인
+
+---
+
+## Phase 2.5: 성능 개선 ✅
+
+### P0 — 즉시 적용 (비용·블로킹 직접 영향)
+
+- [x] **[P0] async subprocess 전환** — `code_runner.py` `_run()` + 3개 `@tool` → `asyncio.create_subprocess_exec()` 기반으로 교체. pytest/ruff 실행 중 이벤트 루프 블로킹 제거
+
+### P1 — 응답 속도 개선
+
+- [x] **[P1] OpenAPI spec 응답 캐싱** — `_wrap_spec_tool_with_cache()` 래퍼 (`agent.py`), TTL 5분. 동일 세션 반복 조회 즉시 반환
+- [x] **[P1] 파일 읽기 배치** — `read_multiple_files` 툴 추가 (`filesystem_server.py`). N번 `read_file` → 1번 MCP 호출로 단축
+- [x] **[P1] ruff 병렬 실행** — `run_ruff_all` 툴 (`code_runner.py`). `asyncio.gather()`로 lint + format 동시 실행
+- [x] **[P1] 채팅 히스토리 최대 크기 제한** — `_CHAT_HISTORY_MAX = 30` (`app.py`). 무한 누적 방지
+
+### P2 — 안정화 (컨텍스트 관리 + 계측)
+
+- [x] **[P2] SummarizationMiddleware 트리거 조정** — 60,000 → 80,000 토큰 (`agent.py`). 불필요한 조기 요약 방지
+- [x] **[P2] 타이밍 계측** — `TimingCallbackHandler` (`callbacks.py`). LLM/툴 호출별 실행 시간 INFO 로그
+
+### 버그 수정 (테스트 작성 중 발견)
+
+- [x] **`agent.py` 이름 충돌 수정** — `from langchain.agents import create_agent as _langchain_create_agent`. 모듈 함수와 동명 충돌로 인한 무한 재귀 버그 수정
+
+### 테스트 커버리지
+
+- [x] **테스트 커버리지 99% 달성** — 124개 테스트, 신규 파일 6개 작성
+  - `test_filesystem_server.py`, `test_callbacks.py`, `test_planning.py`
+  - `test_middleware.py`, `test_agent_helpers.py`, `test_app.py`
 
 ---
 
