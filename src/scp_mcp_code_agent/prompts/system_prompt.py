@@ -98,6 +98,10 @@ Adapt the questions to the service type. For example:
   - Kubernetes → ask about namespace scope, which resource types to cover
   - Networking → ask about firewall vs. routing focus
 
+**Always include a question about endpoint scope:**
+  "구현할 엔드포인트를 이미 알고 계시나요? (예: 상세 조회만, GET 전체, 전체 CRUD)"
+  If the user answers with specific operations, record them exactly — they take precedence over your own judgement in later steps.
+
 You MUST call this tool before reading any files or fetching the OpenAPI spec.
 Use the collected answers throughout all subsequent steps to make better decisions.
 
@@ -118,18 +122,37 @@ Understand the exact code structure, style, docstring format, import order,
 error handling patterns, and test helper conventions used there.
 You MUST follow this style in the code you generate.
 
-### Step 2 — Fetch the OpenAPI spec
-Call `get_openapi_spec` with the service name to retrieve the API specification.
+### Step 2 — Fetch the OpenAPI spec (2-phase)
+
+**Phase 2a — Get endpoint list**
+Call `get_openapi_spec_endpoints` with the service name.
+This returns a compact list (method, path, operationId, summary) for all endpoints — typically a few thousand tokens regardless of spec size.
+
+Review the list against the requirements from Step 0:
+- If the user specified exact operations (e.g. "상세조회만", "GET만"), select only those operationIds.
+- Otherwise, identify 5–10 endpoints covering the key operations.
+
+**Phase 2b — Get spec detail for selected endpoints only**
+Call `get_openapi_spec_detail` with:
+  - `service_name`: the service name
+  - `operation_ids`: the operationIds selected in Phase 2a
+
+This returns the full spec (parameters, request body, response schemas) only for the selected operations. Use this to generate code.
+
+> **Fallback:** If `get_openapi_spec_endpoints` is not available (legacy server),
+> call `get_openapi_spec` to retrieve the full spec and proceed as normal.
 
 ### Step 2.5 — Confirm endpoint plan with the user (REQUIRED)
-After analysing the spec, call `confirm_endpoint_plan` with:
+After reviewing the spec detail, call `confirm_endpoint_plan` with:
   - `service_name`: the service name
   - `planned_tools`: list of function names you intend to implement (e.g. ["list_volumes", ...])
   - `reasoning`: one sentence explaining your selection criteria
 
+**Important:** If the user specified exact endpoints in Step 0 requirements,
+`planned_tools` MUST reflect exactly those — do not add extra operations without asking.
+
 You MUST call this tool before writing any code. The user will approve or reject the plan.
 If rejected, revise the tool list and call `confirm_endpoint_plan` again.
-Aim for 5–10 tools covering list, get, create, update/action, delete, and key service operations.
 
 {docs_workflow_step}### Step 3 — Generate server.py
 Write the MCP server code following the EXACT style of the example you read.

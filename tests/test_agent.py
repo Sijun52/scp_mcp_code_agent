@@ -57,6 +57,19 @@ class TestBuildSystemPrompt:
         assert "read_file" in prompt
         assert "list_directory" in prompt
 
+    def test_references_two_phase_spec_tools(self, tmp_path: Path):
+        """Step 2 must reference the 2-phase spec retrieval tools."""
+        prompt = build_system_prompt(tmp_path / "example", tmp_path / "generated")
+
+        assert "get_openapi_spec_endpoints" in prompt
+        assert "get_openapi_spec_detail" in prompt
+
+    def test_references_gather_requirements(self, tmp_path: Path):
+        """Step 0 must reference gather_requirements tool."""
+        prompt = build_system_prompt(tmp_path / "example", tmp_path / "generated")
+
+        assert "gather_requirements" in prompt
+
     def test_references_manifest_json(self, tmp_path: Path):
         """Step 1 must instruct the agent to read MANIFEST.json first."""
         prompt = build_system_prompt(tmp_path / "example", tmp_path / "generated")

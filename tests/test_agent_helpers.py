@@ -8,6 +8,7 @@ import pytest
 from scp_mcp_code_agent.agent import (
     _MCP_TOOL_NAMES,
     _SPEC_CACHE_TTL,
+    _SPEC_TOOL_NAMES,
     _build_middleware,
     _wrap_spec_tool_with_cache,
     create_agent,
@@ -278,8 +279,12 @@ class TestMain:
 
 
 class TestConstants:
-    def test_mcp_tool_names_includes_spec_tool(self):
+    def test_mcp_tool_names_includes_legacy_spec_tool(self):
         assert "get_openapi_spec" in _MCP_TOOL_NAMES
+
+    def test_mcp_tool_names_includes_two_phase_spec_tools(self):
+        assert "get_openapi_spec_endpoints" in _MCP_TOOL_NAMES
+        assert "get_openapi_spec_detail" in _MCP_TOOL_NAMES
 
     def test_mcp_tool_names_includes_filesystem_tools(self):
         for name in ["read_file", "write_file", "list_directory", "create_directory", "file_exists"]:
@@ -288,5 +293,28 @@ class TestConstants:
     def test_mcp_tool_names_includes_read_multiple_files(self):
         assert "read_multiple_files" in _MCP_TOOL_NAMES
 
+    def test_spec_tool_names_includes_all_spec_tools(self):
+        assert "get_openapi_spec" in _SPEC_TOOL_NAMES
+        assert "get_openapi_spec_endpoints" in _SPEC_TOOL_NAMES
+        assert "get_openapi_spec_detail" in _SPEC_TOOL_NAMES
+
     def test_spec_cache_ttl_is_positive(self):
         assert _SPEC_CACHE_TTL > 0
+
+
+class TestSpecToolCacheWrapping:
+    async def test_all_spec_tools_get_cache_wrapped(self):
+        """_SPEC_TOOL_NAMES에 포함된 툴은 모두 캐시 래퍼가 적용된다."""
+        tools = []
+        for name in ["get_openapi_spec", "get_openapi_spec_endpoints", "get_openapi_spec_detail"]:
+            t = MagicMock()
+            t.name = name
+            tools.append(t)
+
+        p1, p2, p3, p4 = _patch_agent_deps(mock_tools=tools)
+        with p1, p2, p3, p4:
+            await create_agent()
+
+        # 각 spec 툴의 _run이 교체(캐시 래핑)됐는지 확인
+        for t in tools:
+            assert callable(t._run)

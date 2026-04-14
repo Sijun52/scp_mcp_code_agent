@@ -100,7 +100,11 @@ def _wrap_spec_tool_with_cache(tool: BaseTool) -> BaseTool:
 
 # MCP 툴 이름 — ToolRetryMiddleware 재시도 대상 (로컬 code_runner 툴은 제외)
 _MCP_TOOL_NAMES = [
-    "get_openapi_spec",
+    # OpenAPI spec 조회 (2단계 + 레거시 단일 조회)
+    "get_openapi_spec",           # 레거시: 전체 스펙 반환 (하위 호환)
+    "get_openapi_spec_endpoints", # Phase 2a: 엔드포인트 목록만 (compact)
+    "get_openapi_spec_detail",    # Phase 2b: 선택된 operation 상세 스펙
+    # Filesystem
     "read_file",
     "read_multiple_files",
     "write_file",
@@ -108,6 +112,13 @@ _MCP_TOOL_NAMES = [
     "create_directory",
     "file_exists",
 ]
+
+# spec 캐시 적용 대상 툴 이름
+_SPEC_TOOL_NAMES = {
+    "get_openapi_spec",
+    "get_openapi_spec_endpoints",
+    "get_openapi_spec_detail",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +221,7 @@ async def create_agent(  # noqa: RUF029
     client = await mcp_ctx.__aenter__()
 
     mcp_tools: list[BaseTool] = [
-        _wrap_spec_tool_with_cache(t) if t.name == "get_openapi_spec" else t
+        _wrap_spec_tool_with_cache(t) if t.name in _SPEC_TOOL_NAMES else t
         for t in client.get_tools()
     ]
     all_tools: list[BaseTool] = mcp_tools + CODE_RUNNER_TOOLS + PLANNING_TOOLS
