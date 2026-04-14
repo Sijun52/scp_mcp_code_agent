@@ -10,21 +10,20 @@ HITL (Human-in-the-Loop) 처리 흐름:
   4. 최종 AIMessage content를 사용자에게 전달
 
 Interrupt types:
+  - gather_requirements (Scenario 0) : 코드 생성 전 요구사항 수집 (텍스트 질의)
   - openapi_confirm     (Scenario 1) : 스펙 확인 → approve / reject
   - write_file_confirm  (Scenario 2+3): 코드 프리뷰 + 덮어쓰기 → approve / reject
   - hitl_default        (Scenario 4) : 엔드포인트 계획 확인 → approve / reject
   - test_failure        (Scenario 5) : pytest 실패 → retry / save_as_is / abort
 """
 
-import asyncio
 import logging
-import re
 import uuid
 
 _CHAT_HISTORY_MAX = 30  # 세션당 유지할 최대 메시지 수
 
 import chainlit as cl
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.types import Command
 
 from scp_mcp_code_agent.agent import create_agent
@@ -37,10 +36,33 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 # ---------------------------------------------------------------------------
 
 
-async def _handle_interrupt(interrupt_value: dict) -> str | dict:
+async def _handle_interrupt(interrupt_value: dict) -> str:
     """interrupt_value의 type에 따라 적절한 Chainlit UI를 표시하고 사용자 결정을 반환."""
     interrupt_type = interrupt_value.get("type", "hitl_default")
     message = interrupt_value.get("message", "계속 진행할까요?")
+
+    # ── Scenario 0: 요구사항 수집 ────────────────────────────────────────
+    if interrupt_type == "gather_requirements":
+        questions: list[str] = interrupt_value.get("questions", [])
+        service_name = interrupt_value.get("service_name", "")
+
+        await cl.Message(
+            content=f"**[요구사항 수집]** {message}\n\n아래 질문에 답해주세요."
+        ).send()
+
+        answers: list[str] = []
+        for i, question in enumerate(questions, 1):
+            resp = await cl.AskUserMessage(
+                content=f"**Q{i}.** {question}",
+                timeout=300,
+            ).send()
+            answers.append(resp.output if resp else "(답변 없음)")
+
+        formatted = "\n".join(
+            f"Q{i}. {q}\nA{i}. {a}"
+            for i, (q, a) in enumerate(zip(questions, answers), 1)
+        )
+        return formatted
 
     # ── Scenario 1: OpenAPI 스펙 확인 ────────────────────────────────────
     if interrupt_type == "openapi_confirm":
@@ -159,7 +181,6 @@ async def _run_with_hitl(
     while True:
         interrupted = False
         interrupt_value = None
-        final_messages = None
 
         async for chunk in graph.astream(input_data, config=config, stream_mode="updates"):
             if "__interrupt__" in chunk:
@@ -180,73 +201,6 @@ async def _run_with_hitl(
 
 
 # ---------------------------------------------------------------------------
-# 멀티 서비스 동시 생성
-# ---------------------------------------------------------------------------
-
-
-def _parse_multi_service(text: str) -> list[str] | None:
-    """쉼표 또는 줄바꿈으로 구분된 복수 서비스명을 파싱한다.
-
-    2개 이상의 서비스가 감지되면 리스트를 반환하고, 단일 서비스면 None을 반환한다.
-
-    Examples:
-        "block storage, virtual server" → ["block storage", "virtual server"]
-        "block storage\\nobject storage" → ["block storage", "object storage"]
-        "virtual server" → None
-    """
-    parts = [p.strip() for p in re.split(r"[,\n]", text) if p.strip()]
-    return parts if len(parts) >= 2 else None
-
-
-async def _run_service_headless(service_name: str, thread_id: str) -> tuple[str, str]:
-    """HITL 없이 단일 서비스 MCP 서버를 생성한다.
-
-    멀티 서비스 동시 실행 전용. 에이전트 인스턴스를 독립적으로 생성하고
-    실행 완료 후 MCP 컨텍스트를 정리한다.
-
-    Returns:
-        (service_name, result_text) 튜플. 오류 발생 시 result_text에 오류 메시지 포함.
-    """
-    graph, mcp_ctx = await create_agent(hitl=False, extra_callbacks=[TimingCallbackHandler()])
-    config = {"configurable": {"thread_id": thread_id}}
-    try:
-        result = await graph.ainvoke(
-            {"messages": [HumanMessage(content=service_name)]},
-            config=config,
-        )
-        output = result["messages"][-1].content if result.get("messages") else "완료 (출력 없음)"
-    except Exception as exc:
-        output = f"[오류] {exc}"
-    finally:
-        await mcp_ctx.__aexit__(None, None, None)
-    return service_name, output
-
-
-async def _run_concurrent_services(services: list[str]) -> None:
-    """여러 서비스를 asyncio.gather로 동시에 생성하고, 완료되는 순서대로 결과를 전송한다."""
-    service_list = "\n".join(f"- `{s}`" for s in services)
-    await cl.Message(
-        content=(
-            f"**{len(services)}개 서비스 동시 생성을 시작합니다.**\n\n"
-            f"{service_list}\n\n"
-            "_각 서비스는 독립적으로 실행되며, 완료되는 순서대로 결과가 표시됩니다._\n"
-            "_멀티 서비스 모드에서는 HITL 확인 절차가 생략됩니다._"
-        )
-    ).send()
-
-    tasks = [
-        asyncio.create_task(_run_service_headless(svc, str(uuid.uuid4())))
-        for svc in services
-    ]
-
-    for coro in asyncio.as_completed(tasks):
-        svc_name, output = await coro
-        await cl.Message(content=f"### ✅ `{svc_name}` 완료\n\n{output}").send()
-
-    await cl.Message(content=f"**모든 {len(services)}개 서비스 생성이 완료됐습니다.**").send()
-
-
-# ---------------------------------------------------------------------------
 # Chainlit lifecycle hooks
 # ---------------------------------------------------------------------------
 
@@ -257,12 +211,12 @@ async def on_chat_start() -> None:
     await cl.Message(
         content=(
             "**MCP Code Generator** is ready!\n\n"
-            "Enter a cloud service name to generate an MCP server from its OpenAPI spec.\n\n"
-            "**단일 서비스:**\n"
+            "생성하고 싶은 클라우드 서비스명을 입력하면 에이전트가 요구사항을 먼저 확인하고\n"
+            "OpenAPI 스펙 기반으로 MCP 서버 코드를 자동 생성합니다.\n\n"
+            "**예시:**\n"
             "- `virtual server`\n"
-            "- `block storage`\n\n"
-            "**멀티 서비스 동시 생성 (쉼표 구분):**\n"
-            "- `block storage, virtual server, object storage`"
+            "- `block storage`\n"
+            "- `kubernetes`"
         )
     ).send()
 
@@ -293,17 +247,7 @@ async def on_chat_end() -> None:
 
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
-    """Process an incoming user message through the agent with HITL support.
-
-    복수 서비스명(쉼표/줄바꿈 구분)이 감지되면 HITL 없이 동시 생성 모드로 실행한다.
-    """
-    # ── 멀티 서비스 동시 생성 ────────────────────────────────────────────────
-    services = _parse_multi_service(message.content)
-    if services:
-        await _run_concurrent_services(services)
-        return
-
-    # ── 단일 서비스 (기존 HITL 플로우) ──────────────────────────────────────
+    """Process an incoming user message through the agent with HITL support."""
     graph = cl.user_session.get("graph")
     session_id = cl.user_session.get("session_id")
     chat_history: list[BaseMessage] = cl.user_session.get("chat_history", [])

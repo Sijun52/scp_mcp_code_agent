@@ -46,6 +46,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from scp_mcp_code_agent.config import settings
 from scp_mcp_code_agent.mcp_client import create_mcp_client
 from scp_mcp_code_agent.middleware import (
+    GatherRequirementsMiddleware,
     OpenAPISpecConfirmMiddleware,
     TestFailureHandlerMiddleware,
     WriteFileConfirmMiddleware,
@@ -151,6 +152,8 @@ def _build_middleware(hitl: bool = True) -> list:
     if hitl:
         stack += [
             # ── HITL ────────────────────────────────────────────────────────
+            # Scenario 0: 코드 생성 전 요구사항 수집
+            GatherRequirementsMiddleware(),
             # Scenario 1: get_openapi_spec 실행 후 스펙 내용 확인
             OpenAPISpecConfirmMiddleware(),
             # Scenario 2+3: write_file 전 코드 프리뷰 + 덮어쓰기 경고

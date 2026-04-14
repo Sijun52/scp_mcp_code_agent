@@ -2,7 +2,35 @@
 
 import pytest
 
-from scp_mcp_code_agent.tools.planning import confirm_endpoint_plan, set_output_directory
+from scp_mcp_code_agent.tools.planning import (
+    confirm_endpoint_plan,
+    gather_requirements,
+    set_output_directory,
+)
+
+
+class TestGatherRequirements:
+    def test_returns_placeholder(self):
+        result = gather_requirements.invoke({
+            "service_name": "block storage",
+            "questions": ["주로 어떤 작업?", "인증 방식은?"],
+        })
+        assert result == "requirements_pending"
+
+    def test_accepts_empty_questions(self):
+        result = gather_requirements.invoke({
+            "service_name": "svc",
+            "questions": [],
+        })
+        assert result == "requirements_pending"
+
+    def test_accepts_various_service_names(self):
+        for svc in ["virtual server", "block storage", "kubernetes", "object storage"]:
+            result = gather_requirements.invoke({
+                "service_name": svc,
+                "questions": ["Q?"],
+            })
+            assert result == "requirements_pending"
 
 
 class TestConfirmEndpointPlan:

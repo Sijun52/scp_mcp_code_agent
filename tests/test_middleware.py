@@ -6,6 +6,7 @@ import pytest
 from langchain_core.messages import ToolMessage
 
 from scp_mcp_code_agent.middleware import (
+    GatherRequirementsMiddleware,
     OpenAPISpecConfirmMiddleware,
     TestFailureHandlerMiddleware,
     WriteFileConfirmMiddleware,
@@ -15,6 +16,8 @@ from scp_mcp_code_agent.middleware import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
 
 
 def _make_request(name: str, args: dict | None = None, tool_id: str = "call_1"):
@@ -261,3 +264,78 @@ class TestTestFailureHandlerMiddleware:
         with patch("scp_mcp_code_agent.middleware.test_failure.interrupt", return_value="abort"):
             for i in range(1, 4):
                 mw.wrap_tool_call(req, handler)
+
+
+# ---------------------------------------------------------------------------
+# GatherRequirementsMiddleware
+# ---------------------------------------------------------------------------
+
+
+class TestGatherRequirementsMiddleware:
+    def test_passthrough_for_non_gather_tool(self):
+        mw = GatherRequirementsMiddleware()
+        req = _make_request("read_file")
+        handler = _make_handler("file content")
+
+        result = mw.wrap_tool_call(req, handler)
+
+        handler.assert_called_once_with(req)
+        assert result.content == "file content"
+
+    def test_intercepts_gather_requirements_tool(self):
+        mw = GatherRequirementsMiddleware()
+        req = _make_request(
+            "gather_requirements",
+            args={
+                "service_name": "block storage",
+                "questions": ["주로 어떤 작업?", "인증 방식은?"],
+            },
+        )
+        handler = _make_handler("should not be called")
+
+        with patch(
+            "scp_mcp_code_agent.middleware.gather_requirements.interrupt",
+            return_value="Q1. 주로 어떤 작업?\nA1. 자동화\nQ2. 인증 방식은?\nA2. API Key",
+        ):
+            result = mw.wrap_tool_call(req, handler)
+
+        # 핸들러는 호출되지 않아야 함
+        handler.assert_not_called()
+        assert isinstance(result, ToolMessage)
+
+    def test_result_contains_collected_answers(self):
+        mw = GatherRequirementsMiddleware()
+        req = _make_request(
+            "gather_requirements",
+            args={"service_name": "svc", "questions": ["Q?"]},
+        )
+        handler = _make_handler()
+        answers = "Q1. Q?\nA1. 자동화 위주"
+
+        with patch(
+            "scp_mcp_code_agent.middleware.gather_requirements.interrupt",
+            return_value=answers,
+        ):
+            result = mw.wrap_tool_call(req, handler)
+
+        assert answers in result.content
+
+    def test_interrupt_called_with_correct_type(self):
+        mw = GatherRequirementsMiddleware()
+        questions = ["Q1?", "Q2?"]
+        req = _make_request(
+            "gather_requirements",
+            args={"service_name": "block storage", "questions": questions},
+        )
+        handler = _make_handler()
+
+        with patch(
+            "scp_mcp_code_agent.middleware.gather_requirements.interrupt",
+            return_value="answers",
+        ) as mock_interrupt:
+            mw.wrap_tool_call(req, handler)
+
+        call_arg = mock_interrupt.call_args[0][0]
+        assert call_arg["type"] == "gather_requirements"
+        assert call_arg["service_name"] == "block storage"
+        assert call_arg["questions"] == questions

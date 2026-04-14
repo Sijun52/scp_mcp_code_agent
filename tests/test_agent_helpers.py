@@ -126,6 +126,7 @@ class TestBuildMiddleware:
             ToolRetryMiddleware,
         )
         from scp_mcp_code_agent.middleware import (
+            GatherRequirementsMiddleware,
             OpenAPISpecConfirmMiddleware,
             TestFailureHandlerMiddleware,
             WriteFileConfirmMiddleware,
@@ -137,6 +138,7 @@ class TestBuildMiddleware:
         assert ModelRetryMiddleware in types
         assert ToolRetryMiddleware in types
         assert ModelCallLimitMiddleware in types
+        assert GatherRequirementsMiddleware in types
         assert OpenAPISpecConfirmMiddleware in types
         assert WriteFileConfirmMiddleware in types
         assert TestFailureHandlerMiddleware in types
@@ -148,6 +150,7 @@ class TestBuildMiddleware:
             ToolRetryMiddleware,
         )
         from scp_mcp_code_agent.middleware import (
+            GatherRequirementsMiddleware,
             OpenAPISpecConfirmMiddleware,
             TestFailureHandlerMiddleware,
             WriteFileConfirmMiddleware,
@@ -162,6 +165,7 @@ class TestBuildMiddleware:
         assert ModelCallLimitMiddleware in types
 
         # HITL 미들웨어는 제외
+        assert GatherRequirementsMiddleware not in types
         assert OpenAPISpecConfirmMiddleware not in types
         assert WriteFileConfirmMiddleware not in types
         assert TestFailureHandlerMiddleware not in types

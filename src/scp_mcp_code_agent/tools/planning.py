@@ -1,8 +1,47 @@
 """Planning tools — 에이전트가 코드 생성 전/중에 사용하는 워크플로우 툴."""
 
 from pathlib import Path
+from typing import Annotated
 
 from langchain_core.tools import tool
+from pydantic import Field
+
+
+@tool
+def gather_requirements(
+    service_name: Annotated[str, Field(description="생성 대상 서비스명 (예: 'block storage')")],
+    questions: Annotated[
+        list[str],
+        Field(
+            description=(
+                "사용자에게 물어볼 요구사항 질문 목록. 서비스 특성에 맞게 3~5개를 구성한다. "
+                "예: ['주로 어떤 작업을 자동화하려고 하시나요?', '특별한 인증 방식이 있나요?']"
+            )
+        ),
+    ],
+) -> str:
+    """코드 생성 전 사용자의 요구사항을 수집한다.
+
+    Use this tool when:
+    - 사용자가 서비스명을 처음 제시했을 때 (OpenAPI 스펙 조회 전)
+    - 코드 스타일, 중점 기능, 인증 방식 등 스펙만으로 파악하기 어려운 요구사항이 있을 때
+
+    Workflow:
+    1. 서비스명을 보고 해당 서비스 특성에 맞는 3~5개 질문을 구성한다.
+    2. 이 툴을 호출하면 사용자에게 질문이 표시되고 답변을 수집한다.
+    3. 반환된 요구사항을 이후 스펙 분석 및 코드 생성에 반영한다.
+
+    Common scenarios:
+    - 블록 스토리지: 볼륨 타입, 스냅샷 필요 여부, attach/detach 작업 포함 여부
+    - 쿠버네티스: 네임스페이스 범위, 리소스 종류(Pod/Service/Deployment), 클러스터 연결 방식
+    - 네트워킹: 방화벽 규칙 관리 vs 라우팅 중심, VPC 개념 포함 여부
+
+    Returns:
+        사용자가 입력한 요구사항 요약 문자열.
+        GatherRequirementsMiddleware가 실제 사용자 답변으로 이 반환값을 대체한다.
+    """
+    # 실제 반환값은 GatherRequirementsMiddleware가 사용자 답변으로 대체한다.
+    return "requirements_pending"
 
 
 @tool
@@ -49,4 +88,4 @@ def set_output_directory(path: str) -> str:
     return str(resolved)
 
 
-PLANNING_TOOLS = [confirm_endpoint_plan, set_output_directory]
+PLANNING_TOOLS = [gather_requirements, confirm_endpoint_plan, set_output_directory]
