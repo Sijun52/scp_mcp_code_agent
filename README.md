@@ -67,8 +67,18 @@ docker compose up
 ```
 입력: "block storage"
 
-[Step 1] MANIFEST.json 읽기 → 가장 유사한 예시 선택 → 예시 코드 읽기
-[Step 2] get_openapi_spec("block storage") 호출
+[Step 0] gather_requirements 호출 → 에이전트가 서비스 특화 질문 3~5개 제시
+         (어떤 엔드포인트가 필요한지, 에러 처리 방식, 인증 구조 등)
+         사용자가 텍스트로 답변 → 요구사항 수집 완료
+
+[Step 1] MANIFEST.json 읽기 → 가장 유사한 예시 선택 → read_multiple_files 배치 읽기
+
+[Step 2a] get_openapi_spec_endpoints("block storage") → 엔드포인트 목록 조회 (~3k 토큰)
+[Step 2b] get_openapi_spec_detail(..., operation_ids=[...]) → 선택된 스펙 상세 조회 (~10k 토큰)
+          ※ 전체 스펙(~150k 토큰) 대비 ~91% 토큰 절감
+
+[Step 2.5] confirm_endpoint_plan → 구현할 툴 목록 사용자 승인
+
 [Step 3] server.py 생성
 [Step 4] tests/test_server.py 생성
 [Step 5] 파일 저장 → generated/block_storage_mcp_server/
@@ -85,4 +95,5 @@ docker compose up
 |---|---|
 | [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) | 프로젝트 구조, 기술 스택, 로컬 개발, 테스트, MANIFEST 관리, 성능 최적화, ADR |
 | [DEVOPS_GUIDE.md](docs/DEVOPS_GUIDE.md) | Docker 상세, MCP 서버 연결 설정, 환경변수 전체, vLLM 설정 |
+| [OPENAPI_MCP_SERVER_SPEC.md](docs/OPENAPI_MCP_SERVER_SPEC.md) | OpenAPI MCP 서버 구현 스펙 (2단계 조회 툴 인터페이스 정의) |
 | [TODO.md](TODO.md) | 개발 현황 및 백로그 |

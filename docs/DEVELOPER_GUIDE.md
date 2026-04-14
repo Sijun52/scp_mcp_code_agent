@@ -41,12 +41,13 @@ scp_mcp_code_agent/
 │   ├── mcp_client.py                   # MultiServerMCPClient 설정 (filesystem/openapi/docs)
 │   ├── config.py                       # 환경변수 (.env) 로딩 (pydantic-settings)
 │   ├── middleware/                      # HITL 미들웨어 (5개 시나리오)
+│   │   ├── gather_requirements.py      # Scenario 0: 코드 생성 전 요구사항 수집 (텍스트 질의)
 │   │   ├── openapi_confirm.py          # Scenario 1: 스펙 조회 후 사용자 확인
 │   │   ├── write_file_confirm.py       # Scenario 2+3: 코드 프리뷰 + 덮어쓰기 경고
 │   │   └── test_failure.py             # Scenario 5: pytest 반복 실패 시 판단 위임
 │   ├── tools/
 │   │   ├── code_runner.py              # run_pytest / run_ruff_check / run_ruff_all (async)
-│   │   └── planning.py                 # confirm_endpoint_plan / set_output_directory
+│   │   └── planning.py                 # gather_requirements / confirm_endpoint_plan / set_output_directory
 │   ├── prompts/
 │   │   └── system_prompt.py            # 시스템 프롬프트 빌더 (docs 연결 여부 반영)
 │   └── mcp_servers/
@@ -70,7 +71,8 @@ scp_mcp_code_agent/
 │
 ├── docs/
 │   ├── DEVELOPER_GUIDE.md              # 이 파일
-│   └── DEVOPS_GUIDE.md                 # Docker / 배포 / MCP 서버 연결
+│   ├── DEVOPS_GUIDE.md                 # Docker / 배포 / MCP 서버 연결
+│   └── OPENAPI_MCP_SERVER_SPEC.md      # OpenAPI MCP 서버 구현 스펙 (2단계 조회 툴 인터페이스)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml
@@ -161,6 +163,7 @@ uv run pytest mcp_code_example/tests/ -v
 |------|------|------|
 | **Async subprocess** | `subprocess.run()` → `asyncio.create_subprocess_exec()` | pytest/ruff 실행(10~30s) 중 이벤트 루프 블로킹 제거 |
 | **ruff 병렬 실행** | `run_ruff_all` — `asyncio.gather()`로 lint + format 동시 실행 | 툴 호출 2회 → 1회, 실행 시간 절반 |
+| **2단계 OpenAPI 스펙 조회** | `get_openapi_spec_endpoints` → `get_openapi_spec_detail` — 선택된 operation만 상세 조회 | 전체 스펙(~150k 토큰) → 목록(~3k) + 상세(~10k), 약 91% 토큰 절감 |
 | **OpenAPI spec 캐싱** | `_wrap_spec_tool_with_cache()` — TTL 5분 in-memory 캐시 | 동일 세션 내 반복 스펙 조회 즉시 반환 |
 | **파일 읽기 배치** | `read_multiple_files` — 여러 파일을 단일 MCP 호출로 읽기 | N번 `read_file` → 1번으로 단축 |
 | **MANIFEST 기반 예시 선택** | `MANIFEST.json` → tags 매칭 → `read_multiple_files` 배치 읽기 | 불필요한 예시 파일 로드 제거, 서비스별 최적 레퍼런스 자동 선택 |
@@ -208,3 +211,11 @@ uv run chainlit run src/scp_mcp_code_agent/app.py 2>&1 | grep "\[timing\]"
 ### ADR-007: 생성 툴 프롬프트 스타일
 - **결정**: `Annotated[type, Field(description=...)]` 파라미터 + "Use this tool when / Workflow / Common scenarios" docstring 구조
 - **이유**: AWS MCP 서버 패턴 참조. AI 어시스턴트가 툴 호출 시점과 파라미터 선택을 더 정확히 판단하도록 유도.
+
+### ADR-008: 코드 생성 전 요구사항 수집
+- **결정**: `gather_requirements` 툴 + `GatherRequirementsMiddleware` (Scenario 0 HITL)
+- **이유**: 서비스명만으로는 파악 불가능한 요구사항(엔드포인트 범위, 에러 처리 방식, 인증 구조 등)을 에이전트가 서비스 특성에 맞는 질문으로 추출. `cl.AskUserMessage`로 텍스트 답변 수집 후 `ToolMessage`로 에이전트에 반환.
+
+### ADR-009: OpenAPI 스펙 2단계 조회
+- **결정**: `get_openapi_spec_endpoints` → `get_openapi_spec_detail` 2단계 조회. `get_openapi_spec` 레거시 폴백 유지.
+- **이유**: 서비스당 70~100개 엔드포인트의 전체 스펙은 150k 토큰 수준. 목록 조회(~3k) 후 선택된 5~10개만 상세 조회(~10k)하여 ~91% 절감. 상세 스펙은 `docs/OPENAPI_MCP_SERVER_SPEC.md` 참조.
