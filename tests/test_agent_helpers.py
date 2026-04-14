@@ -109,9 +109,9 @@ class TestWrapSpecToolWithCache:
 class TestBuildMiddleware:
     # SummarizationMiddleware.__init__이 내부적으로 init_chat_model을 호출해
     # LLM 초기화를 시도하므로 패치 후 테스트한다.
-    def _build(self):
+    def _build(self, hitl: bool = True):
         with patch("scp_mcp_code_agent.agent.SummarizationMiddleware", return_value=MagicMock()):
-            return _build_middleware()
+            return _build_middleware(hitl=hitl)
 
     def test_returns_list(self):
         assert isinstance(self._build(), list)
@@ -140,6 +140,36 @@ class TestBuildMiddleware:
         assert OpenAPISpecConfirmMiddleware in types
         assert WriteFileConfirmMiddleware in types
         assert TestFailureHandlerMiddleware in types
+
+    def test_hitl_false_excludes_hitl_middleware(self):
+        from langchain.agents.middleware import (
+            ModelCallLimitMiddleware,
+            ModelRetryMiddleware,
+            ToolRetryMiddleware,
+        )
+        from scp_mcp_code_agent.middleware import (
+            OpenAPISpecConfirmMiddleware,
+            TestFailureHandlerMiddleware,
+            WriteFileConfirmMiddleware,
+        )
+
+        result = self._build(hitl=False)
+        types = [type(m) for m in result]
+
+        # 안정성 / 비용 제어 미들웨어는 포함
+        assert ModelRetryMiddleware in types
+        assert ToolRetryMiddleware in types
+        assert ModelCallLimitMiddleware in types
+
+        # HITL 미들웨어는 제외
+        assert OpenAPISpecConfirmMiddleware not in types
+        assert WriteFileConfirmMiddleware not in types
+        assert TestFailureHandlerMiddleware not in types
+
+    def test_hitl_false_has_fewer_items_than_hitl_true(self):
+        full = self._build(hitl=True)
+        headless = self._build(hitl=False)
+        assert len(headless) < len(full)
 
 
 # ---------------------------------------------------------------------------

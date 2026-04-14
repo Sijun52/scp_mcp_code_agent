@@ -114,13 +114,17 @@ _MCP_TOOL_NAMES = [
 # ---------------------------------------------------------------------------
 
 
-def _build_middleware() -> list:
+def _build_middleware(hitl: bool = True) -> list:
     """Build the ordered middleware stack.
 
     미들웨어 튜닝 파라미터는 변경 빈도가 낮아 코드에서 직접 관리한다.
     운영 환경에서 변경이 필요한 경우 코드 수정 후 재배포한다.
+
+    Args:
+        hitl: HITL 미들웨어 포함 여부. 멀티 서비스 동시 생성 모드에서는
+              여러 에이전트가 동시에 사용자 확인을 요청할 수 없으므로 False로 설정한다.
     """
-    return [
+    stack = [
         # ── 안정성 ──────────────────────────────────────────────────────────
         ModelRetryMiddleware(
             max_retries=3,
@@ -142,22 +146,28 @@ def _build_middleware() -> list:
             trigger=("tokens", 80_000),
             keep=("messages", 10),
         ),
-        # ── HITL ────────────────────────────────────────────────────────────
-        # Scenario 1: get_openapi_spec 실행 후 스펙 내용 확인
-        OpenAPISpecConfirmMiddleware(),
-        # Scenario 2+3: write_file 전 코드 프리뷰 + 덮어쓰기 경고
-        WriteFileConfirmMiddleware(),
-        # Scenario 4: 엔드포인트 계획 툴 호출 시 사용자 승인 요청
-        HumanInTheLoopMiddleware(
-            interrupt_on={
-                "confirm_endpoint_plan": {
-                    "allowed_decisions": ["approve", "reject"],
-                },
-            }
-        ),
-        # Scenario 5: pytest 연속 실패 시 사용자 판단 위임
-        TestFailureHandlerMiddleware(),
     ]
+
+    if hitl:
+        stack += [
+            # ── HITL ────────────────────────────────────────────────────────
+            # Scenario 1: get_openapi_spec 실행 후 스펙 내용 확인
+            OpenAPISpecConfirmMiddleware(),
+            # Scenario 2+3: write_file 전 코드 프리뷰 + 덮어쓰기 경고
+            WriteFileConfirmMiddleware(),
+            # Scenario 4: 엔드포인트 계획 툴 호출 시 사용자 승인 요청
+            HumanInTheLoopMiddleware(
+                interrupt_on={
+                    "confirm_endpoint_plan": {
+                        "allowed_decisions": ["approve", "reject"],
+                    },
+                }
+            ),
+            # Scenario 5: pytest 연속 실패 시 사용자 판단 위임
+            TestFailureHandlerMiddleware(),
+        ]
+
+    return stack
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +175,10 @@ def _build_middleware() -> list:
 # ---------------------------------------------------------------------------
 
 
-async def create_agent(extra_callbacks: list | None = None):  # noqa: RUF029
+async def create_agent(  # noqa: RUF029
+    extra_callbacks: list | None = None,
+    hitl: bool = True,
+):
     """Create and return a compiled agent graph plus the live MCP context.
 
     InMemorySaver checkpointer를 사용하여 HITL interrupt/resume을 지원한다.
@@ -176,6 +189,7 @@ async def create_agent(extra_callbacks: list | None = None):  # noqa: RUF029
 
     Args:
         extra_callbacks: Additional LangChain callbacks (e.g. Chainlit handler).
+        hitl: HITL 미들웨어 활성화 여부. 멀티 서비스 동시 생성 시 False로 설정.
 
     Returns:
         Tuple of (compiled_graph, mcp_ctx).
@@ -202,7 +216,7 @@ async def create_agent(extra_callbacks: list | None = None):  # noqa: RUF029
         model=llm,
         tools=all_tools,
         system_prompt=system_prompt,
-        middleware=_build_middleware(),
+        middleware=_build_middleware(hitl=hitl),
         # HITL interrupt/resume을 위한 checkpointer (필수)
         checkpointer=InMemorySaver(),
     )

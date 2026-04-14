@@ -1,4 +1,4 @@
-"""Unit tests for app.py — _handle_interrupt and _run_with_hitl."""
+"""Unit tests for app.py — _handle_interrupt, _run_with_hitl, multi-service."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +9,9 @@ from langgraph.types import Command
 from scp_mcp_code_agent.app import (
     _CHAT_HISTORY_MAX,
     _handle_interrupt,
+    _parse_multi_service,
+    _run_concurrent_services,
+    _run_service_headless,
     _run_with_hitl,
     on_chat_end,
     on_chat_start,
@@ -449,3 +452,167 @@ class TestChatHistoryMax:
     def test_constant_is_reasonable(self):
         # Should not be too small (< 5) or unboundedly large (> 200)
         assert 5 <= _CHAT_HISTORY_MAX <= 200
+
+
+# ---------------------------------------------------------------------------
+# _parse_multi_service
+# ---------------------------------------------------------------------------
+
+
+class TestParseMultiService:
+    def test_comma_separated_returns_list(self):
+        result = _parse_multi_service("block storage, virtual server")
+        assert result == ["block storage", "virtual server"]
+
+    def test_newline_separated_returns_list(self):
+        result = _parse_multi_service("block storage\nvirtual server")
+        assert result == ["block storage", "virtual server"]
+
+    def test_three_services(self):
+        result = _parse_multi_service("block storage, virtual server, object storage")
+        assert result == ["block storage", "virtual server", "object storage"]
+
+    def test_single_service_returns_none(self):
+        assert _parse_multi_service("virtual server") is None
+
+    def test_empty_string_returns_none(self):
+        assert _parse_multi_service("") is None
+
+    def test_trailing_comma_single_service_returns_none(self):
+        # "block storage, " → ["block storage"] → None
+        assert _parse_multi_service("block storage, ") is None
+
+    def test_strips_whitespace(self):
+        result = _parse_multi_service("  block storage  ,  virtual server  ")
+        assert result == ["block storage", "virtual server"]
+
+    def test_mixed_separators(self):
+        result = _parse_multi_service("block storage\nvirtual server, object storage")
+        assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# _run_service_headless
+# ---------------------------------------------------------------------------
+
+
+class TestRunServiceHeadless:
+    async def test_returns_service_name_and_output(self):
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke = AsyncMock(return_value={
+            "messages": [MagicMock(content="generated!")]
+        })
+        mock_mcp_ctx = AsyncMock()
+        mock_mcp_ctx.__aexit__ = AsyncMock()
+
+        with patch("scp_mcp_code_agent.app.create_agent", return_value=(mock_graph, mock_mcp_ctx)):
+            svc_name, output = await _run_service_headless("block storage", "thread-1")
+
+        assert svc_name == "block storage"
+        assert output == "generated!"
+        mock_mcp_ctx.__aexit__.assert_called_once()
+
+    async def test_cleans_up_mcp_ctx_on_error(self):
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+        mock_mcp_ctx = AsyncMock()
+        mock_mcp_ctx.__aexit__ = AsyncMock()
+
+        with patch("scp_mcp_code_agent.app.create_agent", return_value=(mock_graph, mock_mcp_ctx)):
+            svc_name, output = await _run_service_headless("svc", "thread-2")
+
+        assert svc_name == "svc"
+        assert "[오류]" in output
+        mock_mcp_ctx.__aexit__.assert_called_once()
+
+    async def test_creates_agent_with_hitl_false(self):
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke = AsyncMock(return_value={"messages": [MagicMock(content="ok")]})
+        mock_mcp_ctx = AsyncMock()
+        mock_mcp_ctx.__aexit__ = AsyncMock()
+
+        with patch("scp_mcp_code_agent.app.create_agent", return_value=(mock_graph, mock_mcp_ctx)) as mock_create:
+            await _run_service_headless("svc", "t")
+
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs.get("hitl") is False
+
+
+# ---------------------------------------------------------------------------
+# _run_concurrent_services
+# ---------------------------------------------------------------------------
+
+
+class TestRunConcurrentServices:
+    async def test_sends_start_and_completion_messages(self):
+        mock_cl = _build_mock_cl()
+
+        async def _fake_headless(svc, thread_id):
+            return svc, f"output for {svc}"
+
+        with patch("scp_mcp_code_agent.app.cl", mock_cl):
+            with patch("scp_mcp_code_agent.app._run_service_headless", side_effect=_fake_headless):
+                await _run_concurrent_services(["block storage", "virtual server"])
+
+        # 최소한 시작 메시지 + 각 서비스 결과 + 완료 메시지가 전송됐는지 확인
+        assert mock_cl.Message.return_value.send.call_count >= 4
+
+    async def test_handles_service_error_gracefully(self):
+        mock_cl = _build_mock_cl()
+
+        async def _fake_headless(svc, thread_id):
+            return svc, "[오류] something went wrong"
+
+        with patch("scp_mcp_code_agent.app.cl", mock_cl):
+            with patch("scp_mcp_code_agent.app._run_service_headless", side_effect=_fake_headless):
+                await _run_concurrent_services(["block storage", "virtual server"])
+
+        # 오류가 있어도 완료 메시지까지 전송됐는지 확인
+        assert mock_cl.Message.return_value.send.call_count >= 4
+
+
+# ---------------------------------------------------------------------------
+# on_message — 멀티 서비스 분기
+# ---------------------------------------------------------------------------
+
+
+class TestOnMessageMultiService:
+    async def test_multi_service_input_calls_concurrent_runner(self):
+        mock_cl = _build_mock_cl()
+        mock_cl.user_session.get.return_value = MagicMock()
+
+        with patch("scp_mcp_code_agent.app.cl", mock_cl):
+            with patch("scp_mcp_code_agent.app._run_concurrent_services", new_callable=AsyncMock) as mock_concurrent:
+                user_msg = MagicMock()
+                user_msg.content = "block storage, virtual server"
+                await on_message(user_msg)
+
+        mock_concurrent.assert_called_once_with(["block storage", "virtual server"])
+
+    async def test_single_service_does_not_call_concurrent_runner(self):
+        mock_cl = _build_mock_cl()
+
+        state = MagicMock()
+        state.values = {"messages": [MagicMock(content="done")]}
+
+        async def _astream(input_data, config, stream_mode):
+            yield {"agent": "update"}
+
+        mock_graph = MagicMock()
+        mock_graph.astream = _astream
+        mock_graph.aget_state = AsyncMock(return_value=state)
+
+        session_data = {
+            "graph": mock_graph,
+            "session_id": "s1",
+            "chat_history": [],
+        }
+        mock_cl.user_session.get.side_effect = lambda k, d=None: session_data.get(k, d)
+
+        with patch("scp_mcp_code_agent.app.cl", mock_cl):
+            with patch("scp_mcp_code_agent.app._run_concurrent_services", new_callable=AsyncMock) as mock_concurrent:
+                user_msg = MagicMock()
+                user_msg.content = "virtual server"
+                await on_message(user_msg)
+
+        mock_concurrent.assert_not_called()

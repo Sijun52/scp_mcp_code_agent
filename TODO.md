@@ -113,12 +113,12 @@ Chainlit UI → LangChain Agent (create_agent)
 
 ---
 
-## Phase 3: 기능 개선 🔲
+## Phase 3: 기능 개선
 
 - [ ] 생성된 서버에 `pyproject.toml` 자동 포함 (독립 실행 가능한 패키지로 생성)
 - [ ] Chainlit Step 세분화 (스펙 조회 / 코드 생성 / lint / 테스트 단계별 표시)
 - [ ] 생성 히스토리 로깅 (생성된 파일 경로 목록 기록)
-- [ ] 멀티 서비스 동시 생성 지원
+- [x] **멀티 서비스 동시 생성 지원** — 쉼표/줄바꿈으로 복수 서비스명 감지 → `asyncio.gather` 병렬 실행 (HITL 비활성화)
 
 ---
 
