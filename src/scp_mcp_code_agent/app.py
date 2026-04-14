@@ -27,7 +27,7 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.types import Command
 
 from scp_mcp_code_agent.agent import create_agent
-from scp_mcp_code_agent.callbacks import TimingCallbackHandler
+from scp_mcp_code_agent.callbacks import ChainlitStepCallbackHandler, TimingCallbackHandler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
@@ -220,7 +220,9 @@ async def on_chat_start() -> None:
         )
     ).send()
 
-    graph, mcp_ctx = await create_agent(extra_callbacks=[TimingCallbackHandler()])
+    graph, mcp_ctx = await create_agent(
+        extra_callbacks=[TimingCallbackHandler(), ChainlitStepCallbackHandler()]
+    )
     session_id = str(uuid.uuid4())
 
     cl.user_session.set("graph", graph)
