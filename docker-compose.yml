@@ -1,8 +1,8 @@
 services:
   scp-agent:
-    image: sijun52/scp-mcp-code-agent:latest
+    # image: sijun52/scp-mcp-code-agent:latest
     # 로컬 빌드 시: image 대신 아래 주석 해제
-    # build: .
+    build: .
     ports:
       - "8000:8000"
 
